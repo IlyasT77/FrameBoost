@@ -227,6 +227,16 @@ kernel void select_mv(texture2d<float, access::sample> LA  [[texture(0)]],
     selW.write(float4(w2 / (1.0 + w2), alpha, 0, 0), gid);
 }
 
+// Warp both frames along v; content that comes from outside the picture only exists in one frame.
+inline float3 warp(texture2d<float, access::sample> A, texture2d<float, access::sample> B, sampler s,
+                   float2 q, float2 v, float t, float alpha, float2 size) {
+    float2 pa = q - t * v, pb = q + (1.0 - t) * v;
+    bool inA = all(pa >= 0.0) && all(pa < size), inB = all(pb >= 0.0) && all(pb < size);
+    if (inA && !inB) alpha = 0.0;
+    if (inB && !inA) alpha = 1.0;
+    return mix(A.sample(s, pa).rgb, B.sample(s, pb).rgb, alpha);
+}
+
 // Full-resolution composition with the selected vectors (also handles pass-through / blend / scene cut).
 kernel void compose(texture2d<float, access::sample> A    [[texture(0)]],
                     texture2d<float, access::sample> B    [[texture(1)]],
@@ -247,11 +257,9 @@ kernel void compose(texture2d<float, access::sample> A    [[texture(0)]],
     float4 vv = sel.read(sg);
     float2 wa = selW.read(sg).xy;
     float2 v1 = vv.xy, v2 = vv.zw;
-    float3 c = mix(A.sample(s, q - t * v1).rgb, B.sample(s, q + (1.0 - t) * v1).rgb, wa.y);
-    if (wa.x > 0.02) {
-        float3 c2 = mix(A.sample(s, q - t * v2).rgb, B.sample(s, q + (1.0 - t) * v2).rgb, wa.y);
-        c = mix(c, c2, wa.x);
-    }
+    float2 size = float2(out.get_width(), out.get_height());
+    float3 c = warp(A, B, s, q, v1, t, wa.y, size);
+    if (wa.x > 0.02) c = mix(c, warp(A, B, s, q, v2, t, wa.y, size), wa.x);
     out.write(float4(c, 1), gid);
 }
 

@@ -1,0 +1,45 @@
+name: Build macOS DMG
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app + DMG
+        run: ./scripts/build_dmg.sh
+      - name: Self test (real GPU pipeline)
+        run: |
+          mkdir -p ci-output
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --selftest ci-output 2>&1 | tee ci-output/selftest-log.txt
+      - name: App screenshot (demo signal)
+        continue-on-error: true
+        run: |
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --demo &
+          PID=$!
+          sleep 8
+          screencapture -x ci-output/app_screenshot.png || true
+          kill $PID || true
+      - name: Publish results to ci-output branch
+        if: always()
+        run: |
+          cp build/FrameBoost.dmg ci-output/ || true
+          cd ci-output
+          git init -q && git checkout -q -b ci-output
+          git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "CI output ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-output
+      - name: Release (download link)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: FrameBoost für Mac (neueste Version)
+          files: build/FrameBoost.dmg
+          make_latest: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FrameBoost-dmg
+          path: build/FrameBoost.dmg

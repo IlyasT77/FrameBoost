@@ -5,20 +5,24 @@ import Metal
 final class AppModel: ObservableObject {
     static let demoID = "demo"
     static let noAudioID = "none"
+    private let defaults = UserDefaults.standard
 
     @Published var videoDevices: [DeviceItem] = []
     @Published var audioDevices: [DeviceItem] = []
     @Published var selectedVideo: String = AppModel.demoID
     @Published var selectedAudio: String = AppModel.noAudioID
-    @Published var mode: BoostMode = .auto { didSet { settings.mode = mode } }
-    @Published var compareBlend = false { didSet { settings.showRaw = compareBlend } }
-    @Published var showHUD = true
+    @Published var mode: BoostMode = .auto { didSet { settings.mode = mode; defaults.set(mode.rawValue, forKey: "mode") } }
+    @Published var quality: GenQuality = .high { didSet { interp?.quality = quality; defaults.set(quality.rawValue, forKey: "quality") } }
+    @Published var sharpen: Double = 0.3 { didSet { settings.sharpen = Float(sharpen); defaults.set(sharpen, forKey: "sharpen") } }
+    @Published var dedup = true { didSet { store.dedupEnabled = dedup; defaults.set(dedup, forKey: "dedup") } }
+    @Published var compareBlend = false { didSet { settings.blendOnly = compareBlend } }
+    @Published var showHUD = true { didSet { defaults.set(showHUD, forKey: "hud") } }
+    @Published var volume: Double = 1.0 { didSet { capture.volume = Float(volume); defaults.set(volume, forKey: "volume") } }
     @Published var running = false
-    @Published var volume: Double = 1.0 { didSet { capture.volume = Float(volume) } }
     @Published var errorText: String?
     @Published var stats = Stats()
 
-    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, format = "" }
+    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, format = "" }
 
     let store = FrameStore()
     let settings = RenderSettings()
@@ -29,6 +33,12 @@ final class AppModel: ObservableObject {
     lazy var renderer: Renderer? = { guard let ip = self.interp else { return nil }; return Renderer(interp: ip, store: self.store, settings: self.settings) }()
     private var statTimer: Timer?
     private var observers: [NSObjectProtocol] = []
+    private var activity: NSObjectProtocol?
+
+    var sourceName: String {
+        if selectedVideo == AppModel.demoID { return "Demo-Signal" }
+        return videoDevices.first { $0.id == selectedVideo }?.name ?? "Keine Quelle"
+    }
 
     init() {
         let dev = MTLCreateSystemDefaultDevice()
@@ -40,6 +50,15 @@ final class AppModel: ObservableObject {
         device = dev
         interp = ip
         errorText = err
+        // restore settings
+        if let m = defaults.string(forKey: "mode"), let v = BoostMode(rawValue: m) { mode = v }
+        if let q = defaults.string(forKey: "quality"), let v = GenQuality(rawValue: q) { quality = v }
+        if defaults.object(forKey: "sharpen") != nil { sharpen = defaults.double(forKey: "sharpen") }
+        if defaults.object(forKey: "dedup") != nil { dedup = defaults.bool(forKey: "dedup") }
+        if defaults.object(forKey: "hud") != nil { showHUD = defaults.bool(forKey: "hud") }
+        if defaults.object(forKey: "volume") != nil { volume = defaults.double(forKey: "volume") }
+        settings.mode = mode; settings.sharpen = Float(sharpen); store.dedupEnabled = dedup; interp?.quality = quality
+
         statTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.updateStats() }
         let nc = NotificationCenter.default
         for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
@@ -51,12 +70,13 @@ final class AppModel: ObservableObject {
     func refreshDevices(autostart: Bool) {
         videoDevices = CaptureManager.videoItems()
         audioDevices = CaptureManager.audioItems()
-        if let card = videoDevices.first(where: { $0.isCaptureCard }) {
+        let remembered = defaults.string(forKey: "video")
+        if let card = videoDevices.first(where: { $0.id == remembered }) ?? videoDevices.first(where: { $0.isCaptureCard }) {
             if selectedVideo == AppModel.demoID || !videoDevices.contains(where: { $0.id == selectedVideo }) {
                 selectedVideo = card.id
                 selectedAudio = CaptureManager.matchingAudio(forVideoName: card.name, in: audioDevices)?.id ?? AppModel.noAudioID
             }
-            if autostart && !running { start() }
+            if autostart && !running && card.isCaptureCard { start() }
         } else if selectedVideo != AppModel.demoID && !videoDevices.contains(where: { $0.id == selectedVideo }) {
             selectedVideo = AppModel.demoID
         }
@@ -70,40 +90,59 @@ final class AppModel: ObservableObject {
 
     func selectVideo(_ id: String) {
         selectedVideo = id
+        if id != AppModel.demoID { defaults.set(id, forKey: "video") }
         if let item = videoDevices.first(where: { $0.id == id }), let a = CaptureManager.matchingAudio(forVideoName: item.name, in: audioDevices) {
             selectedAudio = a.id
         }
         if running { start() }
     }
 
+    func selectAudio(_ id: String) {
+        selectedAudio = id
+        if running && selectedVideo != AppModel.demoID { start() }
+    }
+
     func start() {
         errorText = nil
         stopSources()
         store.reset()
+        renderer?.reset()
         if selectedVideo == AppModel.demoID {
-            demo.start(store: store); running = true; stats.format = "Demo 1280×720 @ 60 Hz (Spiel: 30 FPS)"
+            demo.start(store: store); setRunning(true); stats.format = "Demo 1280×720 @ 60 Hz (Spiel: 30 FPS)"
             return
         }
         CaptureManager.requestAccess { [weak self] ok in
             guard let self = self else { return }
             guard ok else {
                 self.errorText = "Kamera-Zugriff verweigert. Systemeinstellungen → Datenschutz & Sicherheit → Kamera → FrameBoost erlauben."
-                self.running = false; return
+                self.setRunning(false); return
             }
             do {
                 try self.capture.start(videoID: self.selectedVideo,
                                        audioID: self.selectedAudio == AppModel.noAudioID ? nil : self.selectedAudio, store: self.store)
-                self.running = true
+                self.setRunning(true)
                 self.stats.format = self.capture.formatDescription
             } catch {
-                self.errorText = error.localizedDescription; self.running = false
+                self.errorText = error.localizedDescription; self.setRunning(false)
             }
         }
     }
 
     private func stopSources() { demo.stop(); capture.stop() }
 
-    func stop() { stopSources(); running = false }
+    func stop() { stopSources(); setRunning(false); renderer?.reset() }
+
+    private func setRunning(_ on: Bool) {
+        running = on
+        renderer?.active = on
+        // keep the display awake and the app out of App Nap while playing
+        if on, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.idleDisplaySleepDisabled, .userInitiated, .latencyCritical],
+                                                             reason: "FrameBoost: Gameplay")
+        } else if !on, let a = activity {
+            ProcessInfo.processInfo.endActivity(a); activity = nil
+        }
+    }
 
     private func updateStats() {
         guard running else { return }
@@ -111,8 +150,9 @@ final class AppModel: ObservableObject {
         stats.game = store.gameFPS
         stats.output = renderer?.outputFPS ?? 0
         stats.gpu = renderer?.gpuMs ?? 0
-        if running && stats.signal == 0 && selectedVideo != AppModel.demoID {
-            errorText = "Kein Signal – ist die PS5 an und HDCP in den PS5-Einstellungen deaktiviert?"
+        stats.dupes = store.duplicateShare
+        if stats.signal == 0 && selectedVideo != AppModel.demoID {
+            errorText = "Kein Signal – PS5 an? In der PS5: Einstellungen → System → HDMI → „HDCP aktivieren“ AUS."
         } else if errorText?.hasPrefix("Kein Signal") == true { errorText = nil }
     }
 }

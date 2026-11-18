@@ -34,12 +34,17 @@ struct FrameBoostApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1280, height: 760)
         .commands {
             CommandGroup(after: .toolbar) {
                 Button("Frame Gen: Aus") { model.mode = .off }.keyboardShortcut("0", modifiers: [.command])
                 Button("Frame Gen: Auto") { model.mode = .auto }.keyboardShortcut("1", modifiers: [.command])
                 Button("Frame Gen: 2×") { model.mode = .x2 }.keyboardShortcut("2", modifiers: [.command])
+                Button("Frame Gen: 3×") { model.mode = .x3 }.keyboardShortcut("3", modifiers: [.command])
                 Button("Frame Gen: 4×") { model.mode = .x4 }.keyboardShortcut("4", modifiers: [.command])
+                Divider()
+                Button("FPS-Anzeige ein/aus") { model.showHUD.toggle() }.keyboardShortcut("i", modifiers: [.command])
+                Button(model.running ? "Stop" : "Start") { model.running ? model.stop() : model.start() }.keyboardShortcut("s", modifiers: [.command, .shift])
             }
         }
     }

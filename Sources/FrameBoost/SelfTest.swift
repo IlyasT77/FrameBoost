@@ -10,8 +10,7 @@ enum SelfTest {
     static func run(outputDir: String) -> Bool {
         var log = ""
         func say(_ s: String) { print(s); log += s + "\n" }
-        let fm = FileManager.default
-        try? fm.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
         guard let device = MTLCreateSystemDefaultDevice() else { say("FEHLER: kein Metal-Gerät"); return false }
         say("GPU: \(device.name)")
         let interp: Interpolator
@@ -22,8 +21,8 @@ enum SelfTest {
         CVMetalTextureCacheCreate(nil, nil, device, nil, &cache)
         let demo = DemoSource()
         var keep: [Any] = []
-        func texture(_ n: Double) -> MTLTexture {
-            let pb = demo.render(frame: n)!
+        func texture(_ n: Double, fast: Bool = false) -> MTLTexture {
+            let pb = demo.render(frame: n, fast: fast)!
             var cv: CVMetalTexture?
             CVMetalTextureCacheCreateTextureFromImage(nil, cache!, pb, nil, .bgra8Unorm, DemoSource.width, DemoSource.height, 0, &cv)
             keep.append(pb); keep.append(cv!)
@@ -51,74 +50,115 @@ enum SelfTest {
             return (cmd.gpuEndTime - cmd.gpuStartTime) * 1000
         }
         let W = DemoSource.width, H = DemoSource.height
+        let avg = { (a: [Double]) in a.reduce(0, +) / Double(max(a.count, 1)) }
+        var ok = true
 
-        // --- Quality: generate the middle frame between 30 FPS frames and compare with the true middle ---
-        var psnrFB: [Double] = [], psnrBlend: [Double] = [], psnrHold: [Double] = []
-        var images: [String: [UInt8]] = [:]
-        for base in [10.0, 23.0, 37.0, 52.0] {
-            let tA = texture(base), tB = texture(base + 1)
-            _ = run { interp.ingest(tA, cmd: $0) }
-            _ = run { interp.ingest(tB, cmd: $0) }
-            let truth = read(texture(base + 0.5).self)
-            let o1 = outTex(W, H), o2 = outTex(W, H), o3 = outTex(W, H)
-            _ = run { cmd in
-                interp.synthesize(t: 0.5, into: o1, mode: .interpolate, cmd: cmd)
-                interp.synthesize(t: 0.5, into: o2, mode: .blend, cmd: cmd)
-                interp.synthesize(t: 0.0, into: o3, mode: .interpolate, cmd: cmd)
-            }
-            let fb = read(o1), bl = read(o2), hold = read(o3)
-            psnrFB.append(psnr(fb, truth)); psnrBlend.append(psnr(bl, truth)); psnrHold.append(psnr(hold, truth))
-            if base == 10 {
-                images = ["A": hold, "B": read(texture(base + 1)), "truth": truth, "fb": fb, "blend": bl]
+        // --- Quality: generate in-between frames and compare with the true in-between images ---
+        var gridImages: [String: [UInt8]] = [:]
+        say("Qualität (PSNR in dB, höher = besser) gegen das echte Zwischenbild:")
+        for (fast, name) in [(false, "normal"), (true, "schnelle Bewegung")] {
+            for q in GenQuality.allCases {
+                interp.quality = q; interp.reset()
+                var pHold: [Double] = [], pBlend: [Double] = [], pFB: [Double] = []
+                for base in [10.0, 23.0, 37.0, 52.0] {
+                    // a third earlier frame first, so the temporal predictor is warmed up like in real use
+                    _ = run { interp.ingest(texture(base - 1, fast: fast), cmd: $0) }
+                    _ = run { interp.ingest(texture(base, fast: fast), cmd: $0) }
+                    _ = run { interp.ingest(texture(base + 1, fast: fast), cmd: $0) }
+                    for t in [Float(0.25), 0.5, 0.75] {
+                        let truth = read(texture(base + Double(t), fast: fast))
+                        let o1 = outTex(W, H), o2 = outTex(W, H), o3 = outTex(W, H)
+                        _ = run { cmd in
+                            interp.synthesize(t: t, mode: .interpolate, into: o1, cmd: cmd)
+                            interp.synthesize(t: t, mode: .blend, into: o2, cmd: cmd)
+                            interp.synthesize(t: t < 0.5 ? 0 : 1, mode: .interpolate, into: o3, cmd: cmd)
+                        }
+                        let fb = read(o1), bl = read(o2), hold = read(o3)
+                        pFB.append(psnr(fb, truth)); pBlend.append(psnr(bl, truth)); pHold.append(psnr(hold, truth))
+                        if base == 10 && t == 0.5 && q == .high {
+                            gridImages[name + "A"] = read(texture(base, fast: fast)); gridImages[name + "B"] = read(texture(base + 1, fast: fast))
+                            gridImages[name + "truth"] = truth; gridImages[name + "fb"] = fb; gridImages[name + "blend"] = bl
+                        }
+                    }
+                }
+                say(String(format: "  [%@ | %@]  Frame wiederholen %.1f · Überblenden %.1f · FrameBoost %.1f",
+                           name, q.rawValue, avg(pHold), avg(pBlend), avg(pFB)))
+                if avg(pFB) < avg(pBlend) + 3 { ok = false; say("    -> zu schwach!") }
             }
         }
-        let avg = { (a: [Double]) in a.reduce(0, +) / Double(a.count) }
-        say(String(format: "Qualität (PSNR, höher = besser) gegen echtes Zwischenbild:"))
-        say(String(format: "  Frame wiederholen (normal 30 FPS): %.2f dB", avg(psnrHold)))
-        say(String(format: "  Einfaches Überblenden:            %.2f dB", avg(psnrBlend)))
-        say(String(format: "  FrameBoost Frame Generation:      %.2f dB", avg(psnrFB)))
+        interp.quality = .high
 
         // --- Images ---
-        if let a = images["A"], let b = images["B"], let tr = images["truth"], let fb = images["fb"], let bl = images["blend"] {
-            writeGrid([(a, "Echter Frame A (30 FPS)"), (b, "Echter Frame B (30 FPS)"), (tr, "So wäre es richtig (Referenz)"),
-                       (bl, "Nur überblenden: Doppelbilder"), (fb, "FrameBoost: generierter Frame"), (diff(fb, tr), "Fehler FrameBoost (schwarz = perfekt)")],
-                      w: W, h: H, crop: CGRect(x: 280, y: 380, width: 720, height: 340), to: outputDir + "/vergleich.png")
-            writePNG(fb, w: W, h: H, to: outputDir + "/generierter_frame.png")
+        for (name, file) in [("normal", "vergleich.png"), ("schnelle Bewegung", "vergleich_schnell.png")] {
+            if let a = gridImages[name + "A"], let b = gridImages[name + "B"], let tr = gridImages[name + "truth"],
+               let fb = gridImages[name + "fb"], let bl = gridImages[name + "blend"] {
+                writeGrid([(a, "Echter Frame A (30 FPS)"), (b, "Echter Frame B (30 FPS)"), (tr, "So wäre es richtig (Referenz)"),
+                           (bl, "Nur überblenden: Doppelbilder"), (fb, "FrameBoost: generierter Frame"), (diff(fb, tr), "Fehler FrameBoost (schwarz = perfekt)")],
+                          w: W, h: H, crop: CGRect(x: 280, y: 380, width: 720, height: 340), to: outputDir + "/" + file)
+                if name == "normal" { writePNG(fb, w: W, h: H, to: outputDir + "/generierter_frame.png") }
+            }
         }
         // 4x filmstrip
         do {
-            let tA = texture(30), tB = texture(31)
-            _ = run { interp.ingest(tA, cmd: $0) }; _ = run { interp.ingest(tB, cmd: $0) }
+            interp.reset()
+            _ = run { interp.ingest(texture(29), cmd: $0) }; _ = run { interp.ingest(texture(30), cmd: $0) }; _ = run { interp.ingest(texture(31), cmd: $0) }
             var tiles: [([UInt8], String)] = []
             for (i, t) in [Float(0), 0.25, 0.5, 0.75, 1].enumerated() {
                 let o = outTex(W, H)
-                _ = run { interp.synthesize(t: t, into: o, mode: .interpolate, cmd: $0) }
-                tiles.append((read(o), i == 0 || i == 4 ? "echt (t=\(t))" : "generiert (t=\(t))"))
+                _ = run { interp.synthesize(t: t, mode: .interpolate, into: o, cmd: $0) }
+                tiles.append((read(o), i == 0 || i == 4 ? "echt" : "generiert \(i)/4"))
             }
             writeGrid(tiles, w: W, h: H, crop: CGRect(x: 200, y: 380, width: 880, height: 340), to: outputDir + "/120fps_filmstreifen.png", cols: 5)
         }
 
-        // --- Speed at 1080p and 1440p ---
-        var ok = avg(psnrFB) > avg(psnrBlend) && avg(psnrFB) > avg(psnrHold)
-        for (w, h) in [(1920, 1080), (2560, 1440)] {
-            let big1 = outTex(w, h), big2 = outTex(w, h)
-            let s1 = texture(40), s2 = texture(41)
-            // upscale demo frames to the test resolution
-            _ = run { interp.ingest(s1, cmd: $0) }; _ = run { interp.ingest(s2, cmd: $0) }
-            _ = run { interp.synthesize(t: 0, into: big1, mode: .interpolate, cmd: $0); interp.synthesize(t: 1, into: big2, mode: .interpolate, cmd: $0) }
-            _ = run { interp.ingest(big1, cmd: $0) }; _ = run { interp.ingest(big2, cmd: $0) }
-            let disp = outTex(w, h)
-            var est: [Double] = [], syn: [Double] = []
-            for i in 0..<60 {
-                est.append(run { interp.ingest(i % 2 == 0 ? big1 : big2, cmd: $0) })
-                syn.append(run { interp.synthesize(t: 0.5, into: disp, mode: .interpolate, cmd: $0) })
-            }
-            let e = avg(Array(est.dropFirst(5))), s = avg(Array(syn.dropFirst(5)))
-            say(String(format: "%dx%d: Bewegungsanalyse %.2f ms pro echtem Frame, Bildsynthese %.2f ms pro Ausgabe-Frame", w, h, e, s))
-            let budget120 = e / 4 + s   // per 1/120 s slot: analysis amortised over 4 outputs
-            say(String(format: "   -> 60 FPS: %@   120 FPS: %@", e + 2 * s < 33 ? "JA" : "NEIN", budget120 < 8.3 ? "JA" : "knapp/NEIN"))
-            if w == 1920 && e + 2 * s > 33 { ok = false }
+        // --- Scene cut: must not morph between unrelated images ---
+        do {
+            interp.reset()
+            let store = FrameStore()
+            let p1 = demo.render(frame: 5)!, p2 = demo.render(frame: 5, fast: true)!
+            let black = demo.render(frame: 0)!
+            CVPixelBufferLockBaseAddress(black, []); memset(CVPixelBufferGetBaseAddress(black), 0, CVPixelBufferGetDataSize(black)); CVPixelBufferUnlockBaseAddress(black, [])
+            store.push(p1); store.push(p2); store.push(black)
+            let cut = store.take(after: 0)?.isCut ?? false
+            say("Szenenwechsel-Erkennung: \(cut ? "OK" : "FEHLER")")
+            if !cut { ok = false }
+            let s2 = FrameStore()
+            s2.push(p1, time: 1.0); s2.push(p1, time: 1.016); s2.push(p1, time: 1.033)
+            let dupOK = s2.take(after: 0)?.seq == 1
+            say("Doppelte Frames entfernen: \(dupOK ? "OK" : "FEHLER")")
+            if !dupOK { ok = false }
         }
+
+        // --- Speed ---
+        say("Geschwindigkeit:")
+        for (w, h) in [(1920, 1080), (2560, 1440), (3840, 2160)] {
+            for q in GenQuality.allCases {
+                interp.quality = q; interp.reset()
+                let big1 = outTex(w, h), big2 = outTex(w, h), big3 = outTex(w, h)
+                _ = run { cmd in
+                    interp.present(texture(40), to: big1, sharpen: 0, cmd: cmd)
+                    interp.present(texture(41), to: big2, sharpen: 0, cmd: cmd)
+                    interp.present(texture(42), to: big3, sharpen: 0, cmd: cmd)
+                }
+                _ = run { interp.ingest(big1, cmd: $0) }; _ = run { interp.ingest(big2, cmd: $0) }
+                let screen = outTex(3024, 1964)   // MacBook Pro 14" Retina
+                var est: [Double] = [], syn: [Double] = []
+                for i in 0..<40 {
+                    est.append(run { interp.ingest([big3, big1, big2][i % 3], cmd: $0) })
+                    syn.append(run { cmd in
+                        interp.synthesize(t: 0.5, mode: .interpolate, cmd: cmd)
+                        interp.present(interp.output!, to: screen, sharpen: 0.3, cmd: cmd)
+                    })
+                }
+                let e = avg(Array(est.dropFirst(4))), s = avg(Array(syn.dropFirst(4)))
+                // per real frame (33 ms at 30 FPS): one analysis + N syntheses
+                let fps60 = e + 2 * s < 30, fps120 = e + 4 * s < 30
+                say(String(format: "  %dx%d %@: Analyse %.2f ms/Frame, Bild %.2f ms -> 60 FPS %@, 120 FPS %@",
+                           w, h, q == .high ? "Hoch" : "Schnell", e, s, fps60 ? "JA" : "NEIN", fps120 ? "JA" : "NEIN"))
+                if w == 1920 && q == .fast && !fps60 { ok = false }
+            }
+        }
+        interp.quality = .high
         say(ok ? "ERGEBNIS: BESTANDEN" : "ERGEBNIS: NICHT BESTANDEN")
         try? log.write(toFile: outputDir + "/ergebnis.txt", atomically: true, encoding: .utf8)
         return ok
@@ -146,8 +186,10 @@ enum SelfTest {
     }
 
     static func cgImage(_ px: [UInt8], w: Int, h: Int) -> CGImage {
-        let data = Data(px.enumerated().map { $0.offset % 4 == 3 ? 255 : $0.element })
-        let prov = CGDataProvider(data: data as CFData)!
+        var d = px
+        var i = 3
+        while i < d.count { d[i] = 255; i += 4 }
+        let prov = CGDataProvider(data: Data(d) as CFData)!
         return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                        provider: prov, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
@@ -195,7 +237,6 @@ enum IconMaker {
         let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: [
             CGColor(red: 0.95, green: 0.18, blue: 0.45, alpha: 1), CGColor(red: 0.35, green: 0.12, blue: 0.75, alpha: 1)] as CFArray, locations: [0, 1])!
         ctx.drawLinearGradient(g, start: CGPoint(x: 100, y: 924), end: CGPoint(x: 924, y: 100), options: [])
-        // three "frames" -> motion
         for (i, a) in [(0, 0.35), (1, 0.6), (2, 1.0)] {
             ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: CGFloat(a)))
             let x = 230 + CGFloat(i) * 150

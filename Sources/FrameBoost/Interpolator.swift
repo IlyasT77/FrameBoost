@@ -1,35 +1,55 @@
 import Metal
 import simd
 
-struct MEParams { var radius: Int32; var blockSize: Int32; var window: Int32; var lambda: Float }
+struct MEParams {
+    var radius: Int32; var blockSize: Int32; var window: Int32; var lambda: Float
+    var parentScale: Float = 1; var parentDiv: Int32 = 1; var usePrev: Int32 = 0; var subpixel: Int32 = 0
+}
 struct SynthParams {
-    var t: Float; var scale: Float; var offset: SIMD2<Float>
-    var srcSize: SIMD2<Float>; var cell: Float; var mvScale: Float
-    var mode: Int32; var pad0: Int32 = 0; var pad1: Int32 = 0; var pad2: Int32 = 0
+    var t: Float; var cell: Float; var mvScale: Float; var mode: Int32
+    var cut: Int32; var sigma: Float; var occLo: Float; var occHi: Float
+}
+struct PresentParams {
+    var offset: SIMD2<Float>; var scale: Float; var sharpen: Float
+    var srcSize: SIMD2<Float>; var pad0: Float = 0; var pad1: Float = 0
 }
 
 enum SynthMode: Int32 { case passthrough = 0, interpolate = 1, blend = 2 }
 
-/// GPU frame generation: motion estimation between the last two source frames
+enum GenQuality: String, CaseIterable, Identifiable {
+    case high = "Hoch (16 px, Sub-Pixel)"
+    case fast = "Schnell (32 px)"
+    var id: String { rawValue }
+}
+
+/// GPU frame generation: motion estimation between the last two real frames
 /// and motion compensated synthesis of any in-between moment t.
 final class Interpolator {
     let device: MTLDevice
     let queue: MTLCommandQueue
-    private let pLuma, pDown, pCoarse, pRefine, pMedian, pSynth: MTLComputePipelineState
+    private let pLuma, pDown, pCoarse, pRefine, pMedian, pSynth, pPresent: MTLComputePipelineState
 
     private final class Slot {
-        let rgb, l4, l8: MTLTexture
-        init(_ rgb: MTLTexture, _ l4: MTLTexture, _ l8: MTLTexture) { self.rgb = rgb; self.l4 = l4; self.l8 = l8 }
+        let rgb, l2, l4, l8: MTLTexture
+        init(_ rgb: MTLTexture, _ l2: MTLTexture, _ l4: MTLTexture, _ l8: MTLTexture) { self.rgb = rgb; self.l2 = l2; self.l4 = l4; self.l8 = l8 }
+    }
+    private final class Fields {
+        var coarse, coarsePrev, ref, med, fine, fineMed: MTLTexture
+        init(_ c: MTLTexture, _ cp: MTLTexture, _ r: MTLTexture, _ m: MTLTexture, _ f: MTLTexture, _ fm: MTLTexture) {
+            coarse = c; coarsePrev = cp; ref = r; med = m; fine = f; fineMed = fm
+        }
     }
     private var a: Slot?, b: Slot?
-    private var coarse01, coarse10, ref01, ref10, f01, f10: MTLTexture?
+    private var fw: Fields?, bw: Fields?
+    private(set) var output: MTLTexture?
     private(set) var width = 0, height = 0
     private(set) var hasPair = false
-    var frameA: MTLTexture? { a?.rgb }
-    var frameB: MTLTexture? { b?.rgb }
-
-    // block grid: one vector per 32x32 full-res pixels
-    let cell: Float = 32
+    private(set) var ready = false
+    private var pairCount = 0
+    /// true if the current pair is a scene cut (menu, camera cut): no interpolation across it
+    var pairIsCut = false
+    var quality: GenQuality = .high
+    var searchRadius: Int32 = 10   // 1/8 px -> +-80 px per real frame (+ temporal predictor)
 
     init(device: MTLDevice) throws {
         self.device = device
@@ -40,9 +60,11 @@ final class Interpolator {
             guard let f = lib.makeFunction(name: n) else { throw NSError(domain: "FrameBoost", code: 2, userInfo: [NSLocalizedDescriptionKey: "missing \(n)"]) }
             return try device.makeComputePipelineState(function: f)
         }
-        pLuma = try pipe("luma_down4"); pDown = try pipe("down2"); pCoarse = try pipe("me_coarse")
-        pRefine = try pipe("me_refine"); pMedian = try pipe("median3"); pSynth = try pipe("synthesize")
+        pLuma = try pipe("luma_half"); pDown = try pipe("down2"); pCoarse = try pipe("me_coarse")
+        pRefine = try pipe("me_refine"); pMedian = try pipe("median3"); pSynth = try pipe("synthesize"); pPresent = try pipe("present")
     }
+
+    func reset() { a = nil; b = nil; hasPair = false; ready = false; pairCount = 0; width = 0; height = 0 }
 
     private func tex(_ w: Int, _ h: Int, _ f: MTLPixelFormat) -> MTLTexture {
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: f, width: max(w, 1), height: max(h, 1), mipmapped: false)
@@ -52,79 +74,110 @@ final class Interpolator {
     }
 
     private func makeSlot() -> Slot {
-        Slot(tex(width, height, .bgra8Unorm), tex((width + 3) / 4, (height + 3) / 4, .r32Float), tex((width + 7) / 8, (height + 7) / 8, .r32Float))
+        Slot(tex(width, height, .bgra8Unorm), tex((width + 1) / 2, (height + 1) / 2, .r16Float),
+             tex((width + 3) / 4, (height + 3) / 4, .r16Float), tex((width + 7) / 8, (height + 7) / 8, .r16Float))
+    }
+
+    private func makeFields() -> Fields {
+        let gw = (width + 31) / 32, gh = (height + 31) / 32
+        let fw = (width + 15) / 16, fh = (height + 15) / 16
+        return Fields(tex(gw, gh, .rg16Float), tex(gw, gh, .rg16Float), tex(gw, gh, .rg16Float), tex(gw, gh, .rg16Float),
+                      tex(fw, fh, .rg16Float), tex(fw, fh, .rg16Float))
     }
 
     private func setup(_ w: Int, _ h: Int) {
         width = w; height = h
-        a = makeSlot(); b = makeSlot(); hasPair = false; firstDone = false
-        let gw = (w + 31) / 32, gh = (h + 31) / 32
-        coarse01 = tex(gw, gh, .rg16Float); coarse10 = tex(gw, gh, .rg16Float)
-        ref01 = tex(gw, gh, .rg16Float); ref10 = tex(gw, gh, .rg16Float)
-        f01 = tex(gw, gh, .rg16Float); f10 = tex(gw, gh, .rg16Float)
+        a = makeSlot(); b = makeSlot(); fw = makeFields(); bw = makeFields()
+        output = tex(w, h, .bgra8Unorm)
+        hasPair = false; ready = false; pairCount = 0
     }
 
     private func dispatch(_ enc: MTLComputeCommandEncoder, _ p: MTLComputePipelineState, _ w: Int, _ h: Int) {
         enc.setComputePipelineState(p)
-        let tw = p.threadExecutionWidth, th = max(1, p.maxTotalThreadsPerThreadgroup / tw)
-        enc.dispatchThreads(MTLSize(width: w, height: h, depth: 1), threadsPerThreadgroup: MTLSize(width: tw, height: min(th, 8), depth: 1))
+        let tw = p.threadExecutionWidth, th = max(1, min(8, p.maxTotalThreadsPerThreadgroup / tw))
+        enc.dispatchThreads(MTLSize(width: w, height: h, depth: 1), threadsPerThreadgroup: MTLSize(width: tw, height: th, depth: 1))
     }
 
-    /// Push a new source frame (BGRA texture). Encodes copy + motion estimation into `cmd`.
-    func ingest(_ src: MTLTexture, cmd: MTLCommandBuffer) {
+    /// Push a new real frame (BGRA texture). Encodes copy + luma pyramid + motion estimation into `cmd`.
+    func ingest(_ src: MTLTexture, isCut: Bool = false, cmd: MTLCommandBuffer) {
         if src.width != width || src.height != height || a == nil { setup(src.width, src.height) }
-        let hadFrame = firstDone
+        let hadFrame = ready
         swap(&a, &b)
-        guard let a = a, let b = b else { return }
-        // copy new frame (the capture buffer is recycled by the system)
-        if src.pixelFormat == .bgra8Unorm, let blit = cmd.makeBlitCommandEncoder() {
+        guard let a = a, let b = b, let fw = fw, let bw = bw else { return }
+        if let blit = cmd.makeBlitCommandEncoder() {
             blit.copy(from: src, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                       sourceSize: MTLSize(width: width, height: height, depth: 1),
                       to: b.rgb, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
             blit.endEncoding()
         }
         guard let enc = cmd.makeComputeCommandEncoder() else { return }
-        enc.setTexture(b.rgb, index: 0); enc.setTexture(b.l4, index: 1)
-        dispatch(enc, pLuma, b.l4.width, b.l4.height)
-        enc.setTexture(b.l4, index: 0); enc.setTexture(b.l8, index: 1)
-        dispatch(enc, pDown, b.l8.width, b.l8.height)
-        firstDone = true
-        if hadFrame {
-            estimate(enc, from: a, to: b, coarse: coarse01!, ref: ref01!, out: f01!)
-            estimate(enc, from: b, to: a, coarse: coarse10!, ref: ref10!, out: f10!)
+        enc.setTexture(b.rgb, index: 0); enc.setTexture(b.l2, index: 1); dispatch(enc, pLuma, b.l2.width, b.l2.height)
+        enc.setTexture(b.l2, index: 0); enc.setTexture(b.l4, index: 1); dispatch(enc, pDown, b.l4.width, b.l4.height)
+        enc.setTexture(b.l4, index: 0); enc.setTexture(b.l8, index: 1); dispatch(enc, pDown, b.l8.width, b.l8.height)
+        ready = true
+        pairIsCut = isCut
+        if hadFrame && !isCut {
+            let usePrev = pairCount > 0
+            estimate(enc, from: a, to: b, f: fw, usePrev: usePrev)
+            estimate(enc, from: b, to: a, f: bw, usePrev: usePrev)
             hasPair = true
+            pairCount += 1
+        } else if isCut {
+            pairCount = 0
         }
         enc.endEncoding()
     }
-    private var firstDone = false
 
-    var searchRadius: Int32 = 8   // in 1/8 px  -> +-64 px full res per source frame
-
-    private func estimate(_ enc: MTLComputeCommandEncoder, from x: Slot, to y: Slot, coarse: MTLTexture, ref: MTLTexture, out: MTLTexture) {
-        var pc = MEParams(radius: searchRadius, blockSize: 4, window: 8, lambda: 0.004)
-        enc.setTexture(x.l8, index: 0); enc.setTexture(y.l8, index: 1); enc.setTexture(coarse, index: 2)
+    private func estimate(_ enc: MTLComputeCommandEncoder, from x: Slot, to y: Slot, f: Fields, usePrev: Bool) {
+        let tmp = f.coarse; f.coarse = f.coarsePrev; f.coarsePrev = tmp
+        var pc = MEParams(radius: searchRadius, blockSize: 4, window: 8, lambda: 0.004, usePrev: usePrev ? 1 : 0)
+        enc.setTexture(x.l8, index: 0); enc.setTexture(y.l8, index: 1); enc.setTexture(f.coarse, index: 2); enc.setTexture(f.coarsePrev, index: 3)
         enc.setBytes(&pc, length: MemoryLayout<MEParams>.stride, index: 0)
-        dispatch(enc, pCoarse, coarse.width, coarse.height)
-        var pr = MEParams(radius: 2, blockSize: 8, window: 12, lambda: 0)
-        enc.setTexture(x.l4, index: 0); enc.setTexture(y.l4, index: 1); enc.setTexture(coarse, index: 2); enc.setTexture(ref, index: 3)
+        dispatch(enc, pCoarse, f.coarse.width, f.coarse.height)
+
+        var pr = MEParams(radius: 2, blockSize: 8, window: 12, lambda: 0, parentScale: 2, parentDiv: 1, subpixel: quality == .fast ? 1 : 0)
+        enc.setTexture(x.l4, index: 0); enc.setTexture(y.l4, index: 1); enc.setTexture(f.coarse, index: 2); enc.setTexture(f.ref, index: 3)
         enc.setBytes(&pr, length: MemoryLayout<MEParams>.stride, index: 0)
-        dispatch(enc, pRefine, ref.width, ref.height)
-        enc.setTexture(ref, index: 0); enc.setTexture(out, index: 1)
-        dispatch(enc, pMedian, out.width, out.height)
+        dispatch(enc, pRefine, f.ref.width, f.ref.height)
+        enc.setTexture(f.ref, index: 0); enc.setTexture(f.med, index: 1)
+        dispatch(enc, pMedian, f.med.width, f.med.height)
+        guard quality == .high else { return }
+
+        var pf = MEParams(radius: 1, blockSize: 8, window: 12, lambda: 0, parentScale: 2, parentDiv: 2, subpixel: 1)
+        enc.setTexture(x.l2, index: 0); enc.setTexture(y.l2, index: 1); enc.setTexture(f.med, index: 2); enc.setTexture(f.fine, index: 3)
+        enc.setBytes(&pf, length: MemoryLayout<MEParams>.stride, index: 0)
+        dispatch(enc, pRefine, f.fine.width, f.fine.height)
+        enc.setTexture(f.fine, index: 0); enc.setTexture(f.fineMed, index: 1)
+        dispatch(enc, pMedian, f.fineMed.width, f.fineMed.height)
     }
 
-    /// Render the moment t (0 = frame A, 1 = frame B) aspect-fit into `out`.
-    func synthesize(t: Float, into out: MTLTexture, mode: SynthMode, cmd: MTLCommandBuffer) {
-        guard let a = a, let b = b, firstDone, let enc = cmd.makeComputeCommandEncoder() else { return }
-        let sw = Float(width), sh = Float(height)
-        let scale = min(Float(out.width) / sw, Float(out.height) / sh)
-        let off = SIMD2<Float>((Float(out.width) - sw * scale) / 2, (Float(out.height) - sh * scale) / 2)
-        let m: SynthMode = hasPair ? mode : .passthrough
-        var p = SynthParams(t: t, scale: scale, offset: off, srcSize: SIMD2(sw, sh), cell: cell, mvScale: 4, mode: m.rawValue)
+    /// Generates the moment t (0 = frame A, 1 = frame B) at source resolution into `target` (default: internal output).
+    func synthesize(t: Float, mode: SynthMode, into target: MTLTexture? = nil, cmd: MTLCommandBuffer) {
+        guard ready, let a = a, let b = b, let fw = fw, let bw = bw, let out = target ?? output,
+              let enc = cmd.makeComputeCommandEncoder() else { return }
+        let high = quality == .high
+        let m: SynthMode = hasPair || pairIsCut ? mode : .passthrough
+        var p = SynthParams(t: t, cell: high ? 16 : 32, mvScale: high ? 2 : 4, mode: m.rawValue,
+                            cut: pairIsCut ? 1 : 0, sigma: 0.012, occLo: 0.05, occHi: 0.14)
         enc.setTexture(a.rgb, index: 0); enc.setTexture(b.rgb, index: 1)
-        enc.setTexture(f01, index: 2); enc.setTexture(f10, index: 3); enc.setTexture(out, index: 4)
+        enc.setTexture(a.l2, index: 2); enc.setTexture(b.l2, index: 3)
+        enc.setTexture(high ? fw.fineMed : fw.med, index: 4); enc.setTexture(high ? bw.fineMed : bw.med, index: 5)
+        enc.setTexture(out, index: 6)
         enc.setBytes(&p, length: MemoryLayout<SynthParams>.stride, index: 0)
         dispatch(enc, pSynth, out.width, out.height)
+        enc.endEncoding()
+    }
+
+    /// Scales `src` aspect-fit into `out` (window / screen) with optional sharpening (0...1).
+    func present(_ src: MTLTexture, to out: MTLTexture, sharpen: Float, cmd: MTLCommandBuffer) {
+        guard let enc = cmd.makeComputeCommandEncoder() else { return }
+        let sw = Float(src.width), sh = Float(src.height)
+        let scale = min(Float(out.width) / sw, Float(out.height) / sh)
+        var p = PresentParams(offset: SIMD2((Float(out.width) - sw * scale) / 2, (Float(out.height) - sh * scale) / 2),
+                              scale: scale, sharpen: sharpen, srcSize: SIMD2(sw, sh))
+        enc.setTexture(src, index: 0); enc.setTexture(out, index: 1)
+        enc.setBytes(&p, length: MemoryLayout<PresentParams>.stride, index: 0)
+        dispatch(enc, pPresent, out.width, out.height)
         enc.endEncoding()
     }
 }

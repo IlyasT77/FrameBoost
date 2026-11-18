@@ -105,7 +105,10 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             case (3840, 2160): res = 600   // 4K costs a lot of GPU time for little gain on the PS5's 30 FPS mode
             default: res = Double(min(Int(d.width) * Int(d.height), 1920 * 1080)) / 4000
             }
-            return res + min(fps, 120) * 3
+            // compressed MJPEG modes (cheap HDMI sticks) add noise + latency -> prefer raw YUV
+            let sub = CMFormatDescriptionGetMediaSubType(f.formatDescription)
+            let compressed = sub == kCMVideoCodecType_JPEG_OpenDML || sub == kCMVideoCodecType_JPEG || sub == kCMVideoCodecType_H264
+            return res + min(fps, 120) * 3 - (compressed ? 150 : 0)
         }
         guard let best = dev.formats.max(by: { score($0) < score($1) }) else { return }
         do {

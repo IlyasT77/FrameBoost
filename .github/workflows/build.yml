@@ -10,14 +10,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build app + DMG
+        env:
+          VERSION: "2.0.0"
         run: ./scripts/build_dmg.sh
       - name: Self test (real GPU pipeline)
         run: |
+          set -o pipefail
           mkdir -p ci-output
           ./build/FrameBoost.app/Contents/MacOS/FrameBoost --selftest ci-output 2>&1 | tee ci-output/selftest-log.txt
-      - name: App screenshot (demo signal)
+      - name: App screenshots
+        if: always()
         continue-on-error: true
         run: |
+          mkdir -p ci-output
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost &
+          PID=$!
+          sleep 6
+          screencapture -x ci-output/app_startbildschirm.png || true
+          kill $PID || true
+          sleep 2
           ./build/FrameBoost.app/Contents/MacOS/FrameBoost --demo &
           PID=$!
           sleep 8

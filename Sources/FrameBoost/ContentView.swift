@@ -21,28 +21,35 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
     @State private var controlsVisible = true
     @State private var lastMove = Date()
+    @State private var showSettings = false
     let hideTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let accent = LinearGradient(colors: [Color(red: 1, green: 0.25, blue: 0.5), Color(red: 0.55, green: 0.3, blue: 1)],
+                                        startPoint: .leading, endPoint: .trailing)
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             MetalView(model: model).ignoresSafeArea()
             if !model.running { placeholder }
-            VStack {
-                if controlsVisible { controlBar.transition(.move(edge: .top).combined(with: .opacity)) }
+            VStack(spacing: 0) {
+                if controlsVisible { topBar.transition(.move(edge: .top).combined(with: .opacity)) }
                 Spacer()
                 if let e = model.errorText {
-                    Text(e).padding(10).background(.red.opacity(0.85), in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(.white).padding()
+                    Label(e, systemImage: "exclamationmark.triangle.fill")
+                        .padding(10).background(.red.opacity(0.85), in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(.white).padding()
                 }
             }
             if model.showHUD && model.running {
-                VStack { HStack { Spacer(); hud }; Spacer() }.padding(.top, controlsVisible ? 70 : 12).padding(.trailing, 12)
+                VStack { HStack { Spacer(); hud }; Spacer() }.padding(.top, controlsVisible ? 68 : 12).padding(.trailing, 12)
             }
         }
-        .frame(minWidth: 900, minHeight: 560)
+        .frame(minWidth: 900, minHeight: 540)
         .onContinuousHover { _ in poke() }
         .onReceive(hideTimer) { _ in
-            if model.running && Date().timeIntervalSince(lastMove) > 3 { withAnimation { controlsVisible = false } }
+            if model.running && !showSettings && Date().timeIntervalSince(lastMove) > 3 {
+                if controlsVisible { withAnimation { controlsVisible = false } }
+                NSCursor.setHiddenUntilMouseMoves(true)
+            }
         }
         .onAppear { model.refreshDevices(autostart: true) }
     }
@@ -52,54 +59,112 @@ struct ContentView: View {
         if !controlsVisible { withAnimation(.easeOut(duration: 0.15)) { controlsVisible = true } }
     }
 
+    // MARK: - Start screen
     private var placeholder: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "gamecontroller.fill").font(.system(size: 54)).foregroundStyle(.pink)
-            Text("FrameBoost").font(.system(size: 34, weight: .heavy))
-            Text("PS5 → Capture Card → Mac anschließen.\nDie Karte wird automatisch erkannt und gestartet.")
+        VStack(spacing: 16) {
+            Image(systemName: "gamecontroller.fill").font(.system(size: 56)).foregroundStyle(accent)
+            Text("FrameBoost").font(.system(size: 36, weight: .heavy))
+            Text(model.videoDevices.contains { $0.isCaptureCard }
+                 ? "Capture Card gefunden: \(model.sourceName)"
+                 : "PS5 → Capture Card → Mac anschließen.\nDie Karte wird automatisch erkannt und gestartet.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
-            Button(action: model.start) { Label("Start", systemImage: "play.fill").frame(width: 140) }
-                .controlSize(.large).buttonStyle(.borderedProminent).tint(.pink)
+            HStack(spacing: 12) {
+                Button(action: model.start) { Label("Start", systemImage: "play.fill").frame(width: 120) }
+                    .controlSize(.large).buttonStyle(.borderedProminent).tint(.pink)
+                    .keyboardShortcut(.return, modifiers: [])
+                Button { model.selectVideo(AppModel.demoID); model.start() } label: { Label("Demo testen", systemImage: "sparkles").frame(width: 120) }
+                    .controlSize(.large)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("PS5: Einstellungen → System → HDMI → „HDCP aktivieren“ ausschalten")
+                Text("OBS / QuickTime vorher schließen, sonst ist die Karte belegt")
+            }.font(.caption).foregroundStyle(.secondary).padding(.top, 6)
         }.foregroundStyle(.white)
     }
 
+    // MARK: - HUD
     private var hud: some View {
         VStack(alignment: .trailing, spacing: 2) {
             Text("\(Int(model.stats.output.rounded())) FPS").font(.system(size: 26, weight: .bold, design: .monospaced)).foregroundStyle(.green)
             Text("Spiel \(Int(model.stats.game.rounded())) FPS · Signal \(Int(model.stats.signal.rounded())) Hz")
-            Text(String(format: "GPU %.1f ms · %@", model.stats.gpu, model.stats.format))
+            Text(String(format: "GPU %.1f ms · Duplikate entfernt %d%%", model.stats.gpu, Int(model.stats.dupes * 100)))
+            Text(model.stats.format)
         }
         .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white)
         .padding(8).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private var controlBar: some View {
+    // MARK: - Top bar
+    private var topBar: some View {
         HStack(spacing: 12) {
-            Text("FrameBoost").font(.headline).foregroundStyle(.pink)
-            Picker("Quelle", selection: Binding(get: { model.selectedVideo }, set: { model.selectVideo($0) })) {
-                ForEach(model.videoDevices) { d in Text((d.isCaptureCard ? "🎮 " : "") + d.name).tag(d.id) }
+            Text("FrameBoost").font(.system(size: 15, weight: .heavy)).foregroundStyle(accent).fixedSize()
+            Menu {
+                Section("Video-Quelle") {
+                    ForEach(model.videoDevices) { d in
+                        Button { model.selectVideo(d.id) } label: {
+                            Label(d.name, systemImage: d.isCaptureCard ? "gamecontroller" : "video")
+                        }
+                    }
+                    Button { model.selectVideo(AppModel.demoID) } label: { Label("Demo-Signal (ohne Capture Card)", systemImage: "sparkles") }
+                }
                 Divider()
-                Text("Demo-Signal (ohne Capture Card)").tag(AppModel.demoID)
-            }.frame(maxWidth: 260)
-            Picker("Ton", selection: $model.selectedAudio) {
-                Text("Kein Ton").tag(AppModel.noAudioID)
-                ForEach(model.audioDevices) { d in Text(d.name).tag(d.id) }
-            }.frame(maxWidth: 200)
-            Slider(value: $model.volume, in: 0...1) { Image(systemName: "speaker.wave.2.fill") }.frame(width: 90)
+                Button { model.refreshDevices(autostart: false) } label: { Label("Geräte neu suchen", systemImage: "arrow.clockwise") }
+            } label: {
+                Label(model.sourceName, systemImage: "cable.connector").lineLimit(1)
+            }
+            .menuStyle(.borderlessButton).frame(maxWidth: 230)
+
             Picker("Frame Gen", selection: $model.mode) {
-                ForEach(BoostMode.allCases) { m in Text(m.rawValue).tag(m) }
-            }.pickerStyle(.segmented).frame(width: 300)
-            Toggle("FPS", isOn: $model.showHUD).toggleStyle(.switch).controlSize(.mini)
-            Spacer(minLength: 0)
-            Button { model.refreshDevices(autostart: false) } label: { Image(systemName: "arrow.clockwise") }.help("Geräte neu suchen")
+                ForEach(BoostMode.allCases) { m in Text(m.rawValue).tag(m).help(m.help) }
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            .help(model.mode.help)
+
+            Spacer(minLength: 8)
+
+            Button { showSettings.toggle() } label: { Image(systemName: "slider.horizontal.3") }
+                .help("Einstellungen")
+                .popover(isPresented: $showSettings, arrowEdge: .bottom) { SettingsView(model: model) }
+            Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                .help("Vollbild (⌃⌘F)")
             Button { model.running ? model.stop() : model.start() } label: {
-                Label(model.running ? "Stop" : "Start", systemImage: model.running ? "stop.fill" : "play.fill")
-            }.buttonStyle(.borderedProminent).tint(model.running ? .green : .pink)
-            Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.help("Vollbild (⌃⌘F)")
+                Label(model.running ? "Stop" : "Start", systemImage: model.running ? "stop.fill" : "play.fill").fixedSize()
+            }
+            .buttonStyle(.borderedProminent).tint(model.running ? .green : .pink)
         }
-        .padding(10)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(10)
-        .onChange(of: model.selectedAudio) { _, _ in if model.running { model.start() } }
+        .padding(.horizontal, 10).padding(.top, 8)
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        Form {
+            Section("Ton") {
+                Picker("Audio-Quelle", selection: Binding(get: { model.selectedAudio }, set: { model.selectAudio($0) })) {
+                    Text("Kein Ton").tag(AppModel.noAudioID)
+                    ForEach(model.audioDevices) { d in Text(d.name).tag(d.id) }
+                }
+                Slider(value: $model.volume, in: 0...1) { Text("Lautstärke") }
+            }
+            Section("Frame Generation") {
+                Picker("Qualität", selection: $model.quality) {
+                    ForEach(GenQuality.allCases) { q in Text(q.rawValue).tag(q) }
+                }
+                Toggle("Doppelte Frames entfernen (PS5 sendet 30 FPS in 60 Hz)", isOn: $model.dedup)
+                Toggle("Vergleich: nur überblenden (schlechter, zum Testen)", isOn: $model.compareBlend)
+            }
+            Section("Bild") {
+                Slider(value: $model.sharpen, in: 0...1) { Text("Schärfen") }
+                Toggle("FPS-Anzeige", isOn: $model.showHUD)
+            }
+            Section {
+                Text("Eingang: \(model.stats.format.isEmpty ? "–" : model.stats.format)").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 420, height: 470)
     }
 }

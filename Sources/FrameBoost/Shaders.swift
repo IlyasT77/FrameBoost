@@ -14,6 +14,7 @@ using namespace metal;
 struct MEParams {
     int radius; int blockSize; int window; float lambda;
     float parentScale; int parentDiv; int usePrev; int subpixel;
+    float ownPenalty; int pad0; int pad1; int pad2;
 };
 struct SynthParams {
     float t; float cell; float mvScale; int mode;
@@ -98,7 +99,8 @@ kernel void me_coarse(texture2d<float, access::read>  a    [[texture(0)]],
     mv.write(float4(float2(bd), 0, 0), gid);
 }
 
-// Refinement: test upscaled parent vectors (block + 4 neighbours), local search, optional sub-pixel fit.
+// Refinement: own upscaled parent vector + 4 neighbours (penalised by distance to own parent,
+// prevents jumping to wrong matches on repeating textures), local search, optional sub-pixel fit.
 kernel void me_refine(texture2d<float, access::read>  a      [[texture(0)]],
                       texture2d<float, access::read>  b      [[texture(1)]],
                       texture2d<float, access::read>  parent [[texture(2)]],
@@ -109,13 +111,20 @@ kernel void me_refine(texture2d<float, access::read>  a      [[texture(0)]],
     int2 org = int2(gid) * p.blockSize - (p.window - p.blockSize) / 2;
     int2 pg = int2(gid) / p.parentDiv;
     int2 gmax = int2(parent.get_width() - 1, parent.get_height() - 1);
-    const int2 offs[9] = { int2(0,0), int2(1,0), int2(-1,0), int2(0,1), int2(0,-1), int2(1,1), int2(-1,-1), int2(1,-1), int2(-1,1) };
-    float best = sad(a, b, org, int2(0), p.window, 1e9) * 0.95;
-    int2 bd = int2(0);
-    for (int i = 0; i < 9; i++) {
+    const int2 offs[5] = { int2(0,0), int2(1,0), int2(-1,0), int2(0,1), int2(0,-1) };
+    float2 own = parent.read(uint2(clamp(pg, int2(0), gmax))).xy * p.parentScale;
+    int2 bd = int2(round(own));
+    float best = sad(a, b, org, bd, p.window, 1e9);
+    {
+        float pen = p.ownPenalty * length(own) * 0.5;
+        float s = sad(a, b, org, int2(0), p.window, (best - pen) / 0.95) * 0.95 + pen;
+        if (s < best) { best = s; bd = int2(0); }
+    }
+    for (int i = 1; i < 5; i++) {
         int2 g = clamp(pg + offs[i], int2(0), gmax);
         int2 c = int2(round(parent.read(uint2(g)).xy * p.parentScale));
-        float s = sad(a, b, org, c, p.window, best);
+        float pen = p.ownPenalty * length(float2(c) - own);
+        float s = sad(a, b, org, c, p.window, best - pen) + pen;
         if (s < best) { best = s; bd = c; }
     }
     int2 center = bd;
@@ -123,7 +132,8 @@ kernel void me_refine(texture2d<float, access::read>  a      [[texture(0)]],
         for (int dx = -p.radius; dx <= p.radius; dx++) {
             if (dx == 0 && dy == 0) continue;
             int2 d = center + int2(dx, dy);
-            float s = sad(a, b, org, d, p.window, best);
+            float pen = p.ownPenalty * length(float2(d) - own);
+            float s = sad(a, b, org, d, p.window, best - pen) + pen;
             if (s < best) { best = s; bd = d; }
         }
     }
@@ -173,25 +183,20 @@ inline float pcost(texture2d<float, access::sample> LA, texture2d<float, access:
     return c * (1.0 / 6.0);
 }
 
-// Motion compensated synthesis at source resolution.
-kernel void synthesize(texture2d<float, access::sample> A   [[texture(0)]],
-                       texture2d<float, access::sample> B   [[texture(1)]],
-                       texture2d<float, access::sample> LA  [[texture(2)]],
-                       texture2d<float, access::sample> LB  [[texture(3)]],
-                       texture2d<float, access::read>   F01 [[texture(4)]],
-                       texture2d<float, access::read>   F10 [[texture(5)]],
-                       texture2d<float, access::write>  out [[texture(6)]],
-                       constant SynthParams& p [[buffer(0)]],
-                       uint2 gid [[thread_position_in_grid]]) {
-    if (gid.x >= out.get_width() || gid.y >= out.get_height()) return;
+// Per-pixel motion candidate selection at 1/2 resolution:
+// tests 9 candidates (4 nearest blocks of each direction + zero), keeps the best two.
+kernel void select_mv(texture2d<float, access::sample> LA  [[texture(0)]],
+                      texture2d<float, access::sample> LB  [[texture(1)]],
+                      texture2d<float, access::read>   F01 [[texture(2)]],
+                      texture2d<float, access::read>   F10 [[texture(3)]],
+                      texture2d<float, access::write>  sel [[texture(4)]],
+                      texture2d<float, access::write>  selW [[texture(5)]],
+                      constant SynthParams& p [[buffer(0)]],
+                      uint2 gid [[thread_position_in_grid]]) {
+    if (gid.x >= sel.get_width() || gid.y >= sel.get_height()) return;
     constexpr sampler s(coord::pixel, address::clamp_to_edge, filter::linear);
-    float2 q = float2(gid) + 0.5;
+    float2 q = (float2(gid) + 0.5) * 2.0;     // full-res position
     float t = p.t;
-    if (p.mode == 0 || t >= 0.999) { out.write(float4(B.sample(s, q).rgb, 1), gid); return; }
-    if (t <= 0.001) { out.write(float4(A.sample(s, q).rgb, 1), gid); return; }
-    if (p.cut != 0) { out.write(float4((t < 0.5 ? A.sample(s, q) : B.sample(s, q)).rgb, 1), gid); return; }
-    if (p.mode == 2) { out.write(float4(mix(A.sample(s, q).rgb, B.sample(s, q).rgb, t), 1), gid); return; }
-
     float2 g = q / p.cell - 0.5;
     int2 gi = int2(floor(g));
     float2 f = g - float2(gi);
@@ -206,24 +211,48 @@ kernel void synthesize(texture2d<float, access::sample> A   [[texture(0)]],
         cand[4 + k] = -F10.read(gg).xy * p.mvScale;  cost[4 + k] = pen + 0.002;
     }
     cand[8] = float2(0); cost[8] = 0.008;
-    float best = 1e9;
+    int b1 = 0, b2 = 1; float c1 = 1e9, c2 = 1e9;
     for (int k = 0; k < 9; k++) {
         float2 v = cand[k];
-        cost[k] += pcost(LA, LB, s, q - t * v, q + (1.0 - t) * v);
-        best = min(best, cost[k]);
+        float c = cost[k] + pcost(LA, LB, s, q - t * v, q + (1.0 - t) * v);
+        if (c < c1) { c2 = c1; b2 = b1; c1 = c; b1 = k; }
+        else if (c < c2) { c2 = c; b2 = k; }
     }
+    float w2 = exp(-(c2 - c1) / p.sigma);
+    if (length(cand[b1] - cand[b2]) < 0.25) w2 = 0.0;
     // occluded areas (visible in only one frame): lean towards the nearer real frame
-    float occ = smoothstep(p.occLo, p.occHi, best);
+    float occ = smoothstep(p.occLo, p.occHi, c1);
     float alpha = mix(t, t < 0.5 ? 0.0 : 1.0, occ);
-    float3 acc = float3(0); float wsum = 0;
-    for (int k = 0; k < 9; k++) {
-        float w = exp(-(cost[k] - best) / p.sigma);
-        if (w < 0.03) continue;
-        float2 v = cand[k];
-        float3 c = mix(A.sample(s, q - t * v).rgb, B.sample(s, q + (1.0 - t) * v).rgb, alpha);
-        acc += c * w; wsum += w;
+    sel.write(float4(cand[b1], cand[b2]), gid);
+    selW.write(float4(w2 / (1.0 + w2), alpha, 0, 0), gid);
+}
+
+// Full-resolution composition with the selected vectors (also handles pass-through / blend / scene cut).
+kernel void compose(texture2d<float, access::sample> A    [[texture(0)]],
+                    texture2d<float, access::sample> B    [[texture(1)]],
+                    texture2d<float, access::read>   sel  [[texture(2)]],
+                    texture2d<float, access::read>   selW [[texture(3)]],
+                    texture2d<float, access::write>  out  [[texture(4)]],
+                    constant SynthParams& p [[buffer(0)]],
+                    uint2 gid [[thread_position_in_grid]]) {
+    if (gid.x >= out.get_width() || gid.y >= out.get_height()) return;
+    constexpr sampler s(coord::pixel, address::clamp_to_edge, filter::linear);
+    float2 q = float2(gid) + 0.5;
+    float t = p.t;
+    if (p.mode == 0 || t >= 0.999) { out.write(float4(B.sample(s, q).rgb, 1), gid); return; }
+    if (t <= 0.001) { out.write(float4(A.sample(s, q).rgb, 1), gid); return; }
+    if (p.cut != 0) { out.write(float4((t < 0.5 ? A.sample(s, q) : B.sample(s, q)).rgb, 1), gid); return; }
+    if (p.mode == 2) { out.write(float4(mix(A.sample(s, q).rgb, B.sample(s, q).rgb, t), 1), gid); return; }
+    uint2 sg = min(gid / 2, uint2(sel.get_width() - 1, sel.get_height() - 1));
+    float4 vv = sel.read(sg);
+    float2 wa = selW.read(sg).xy;
+    float2 v1 = vv.xy, v2 = vv.zw;
+    float3 c = mix(A.sample(s, q - t * v1).rgb, B.sample(s, q + (1.0 - t) * v1).rgb, wa.y);
+    if (wa.x > 0.02) {
+        float3 c2 = mix(A.sample(s, q - t * v2).rgb, B.sample(s, q + (1.0 - t) * v2).rgb, wa.y);
+        c = mix(c, c2, wa.x);
     }
-    out.write(float4(acc / max(wsum, 1e-5), 1), gid);
+    out.write(float4(c, 1), gid);
 }
 
 // Aspect-fit scaling to the window + contrast adaptive sharpening.

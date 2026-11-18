@@ -142,19 +142,18 @@ enum SelfTest {
                 }
                 _ = run { interp.ingest(big1, cmd: $0) }; _ = run { interp.ingest(big2, cmd: $0) }
                 let screen = outTex(3024, 1964)   // MacBook Pro 14" Retina
-                var est: [Double] = [], syn: [Double] = []
+                var est: [Double] = [], syn: [Double] = [], pre: [Double] = []
                 for i in 0..<40 {
                     est.append(run { interp.ingest([big3, big1, big2][i % 3], cmd: $0) })
-                    syn.append(run { cmd in
-                        interp.synthesize(t: 0.5, mode: .interpolate, cmd: cmd)
-                        interp.present(interp.output!, to: screen, sharpen: 0.3, cmd: cmd)
-                    })
+                    syn.append(run { interp.synthesize(t: 0.5, mode: .interpolate, cmd: $0) })
+                    pre.append(run { interp.present(interp.output!, to: screen, sharpen: 0.3, cmd: $0) })
                 }
-                let e = avg(Array(est.dropFirst(4))), s = avg(Array(syn.dropFirst(4)))
-                // per real frame (33 ms at 30 FPS): one analysis + N syntheses
+                let e = avg(Array(est.dropFirst(4))), s = avg(Array(syn.dropFirst(4))) + avg(Array(pre.dropFirst(4)))
+                // per real frame (33 ms at 30 FPS): one analysis + N output images
                 let fps60 = e + 2 * s < 30, fps120 = e + 4 * s < 30
-                say(String(format: "  %dx%d %@: Analyse %.2f ms/Frame, Bild %.2f ms -> 60 FPS %@, 120 FPS %@",
-                           w, h, q == .high ? "Hoch" : "Schnell", e, s, fps60 ? "JA" : "NEIN", fps120 ? "JA" : "NEIN"))
+                say(String(format: "  %dx%d %@: Analyse %.2f ms/Frame, Zwischenbild %.2f ms + Anzeige %.2f ms -> 60 FPS %@, 120 FPS %@",
+                           w, h, q == .high ? "Hoch" : "Schnell", e, avg(Array(syn.dropFirst(4))), avg(Array(pre.dropFirst(4))),
+                           fps60 ? "JA" : "NEIN", fps120 ? "JA" : "NEIN"))
                 if w == 1920 && q == .fast && !fps60 { ok = false }
             }
         }

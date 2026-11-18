@@ -83,7 +83,7 @@ enum SelfTest {
                 }
                 say(String(format: "  [%@ | %@]  Frame wiederholen %.1f · Überblenden %.1f · FrameBoost %.1f",
                            name, q.rawValue, avg(pHold), avg(pBlend), avg(pFB)))
-                if avg(pFB) < avg(pBlend) + 3 { ok = false; say("    -> zu schwach!") }
+                if avg(pFB) < avg(pBlend) + 3 || (!fast && avg(pFB) < 32) { ok = false; say("    -> zu schwach!") }
             }
         }
         interp.quality = .high

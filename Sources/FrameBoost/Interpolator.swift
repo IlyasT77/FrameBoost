@@ -139,7 +139,8 @@ final class Interpolator {
     private func estimate(_ enc: MTLComputeCommandEncoder, from x: Slot, to y: Slot, f: Fields, usePrev: Bool) {
         let tmp = f.coarse; f.coarse = f.coarsePrev; f.coarsePrev = tmp
         // 1) full search at 1/16 res, 32 px grid (vector unit 1/16 px)
-        var pc = MEParams(radius: searchRadius, blockSize: 2, window: 6, lambda: 0.003, usePrev: usePrev ? 1 : 0)
+        // lambda: prefer the smaller of equally good motions (repeating patterns like road markings, fences)
+        var pc = MEParams(radius: searchRadius, blockSize: 2, window: 6, lambda: 0.08, usePrev: usePrev ? 1 : 0)
         enc.setTexture(x.l16, index: 0); enc.setTexture(y.l16, index: 1); enc.setTexture(f.coarse, index: 2); enc.setTexture(f.coarsePrev, index: 3)
         enc.setBytes(&pc, length: MemoryLayout<MEParams>.stride, index: 0)
         dispatch(enc, pCoarse, f.coarse.width, f.coarse.height)

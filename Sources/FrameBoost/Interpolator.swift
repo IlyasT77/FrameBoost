@@ -18,8 +18,8 @@ struct PresentParams {
 enum SynthMode: Int32 { case passthrough = 0, interpolate = 1, blend = 2 }
 
 enum GenQuality: String, CaseIterable, Identifiable {
-    case high = "Hoch (16 px, Sub-Pixel)"
-    case fast = "Schnell (32 px)"
+    case high = "Hoch (bis 1080p, darüber automatisch Schnell)"
+    case fast = "Schnell"
     var id: String { rawValue }
 }
 
@@ -53,6 +53,8 @@ final class Interpolator {
     /// true if the current pair is a scene cut (menu, camera cut): no interpolation across it
     var pairIsCut = false
     var quality: GenQuality = .high
+    /// "Hoch" costs ~2x GPU time; above 1080p the fast path keeps 60/120 FPS
+    var effectiveQuality: GenQuality { quality == .high && width * height > 1920 * 1088 ? .fast : quality }
     var searchRadius: Int32 = 8    // 1/16 px -> +-128 px per real frame (+ temporal predictor)
 
     init(device: MTLDevice) throws {
@@ -151,13 +153,13 @@ final class Interpolator {
         dispatch(enc, pRefine, f.ref8.width, f.ref8.height)
         // 3) refine at 1/4 (+ sub-pixel in fast mode), median
         var p4 = MEParams(radius: 1, blockSize: 8, window: 12, lambda: 0, parentScale: 2, parentDiv: 1,
-                          subpixel: quality == .fast ? 1 : 0, ownPenalty: 0.05)
+                          subpixel: effectiveQuality == .fast ? 1 : 0, ownPenalty: 0.05)
         enc.setTexture(x.l4, index: 0); enc.setTexture(y.l4, index: 1); enc.setTexture(f.ref8, index: 2); enc.setTexture(f.ref, index: 3)
         enc.setBytes(&p4, length: MemoryLayout<MEParams>.stride, index: 0)
         dispatch(enc, pRefine, f.ref.width, f.ref.height)
         enc.setTexture(f.ref, index: 0); enc.setTexture(f.med, index: 1)
         dispatch(enc, pMedian, f.med.width, f.med.height)
-        guard quality == .high else { return }
+        guard effectiveQuality == .high else { return }
         // 4) 16 px grid at 1/2 res with sub-pixel precision, median
         var p2 = MEParams(radius: 1, blockSize: 8, window: 10, lambda: 0, parentScale: 2, parentDiv: 2, subpixel: 1, ownPenalty: 0.04)
         enc.setTexture(x.l2, index: 0); enc.setTexture(y.l2, index: 1); enc.setTexture(f.med, index: 2); enc.setTexture(f.fine, index: 3)
@@ -171,7 +173,7 @@ final class Interpolator {
     func synthesize(t: Float, mode: SynthMode, into target: MTLTexture? = nil, cmd: MTLCommandBuffer) {
         guard ready, let a = a, let b = b, let fw = fw, let bw = bw, let out = target ?? output, let sel = sel, let selW = selW,
               let enc = cmd.makeComputeCommandEncoder() else { return }
-        let high = quality == .high
+        let high = effectiveQuality == .high
         let m: SynthMode = hasPair || pairIsCut ? mode : .passthrough
         var p = SynthParams(t: t, cell: high ? 16 : 32, mvScale: high ? 2 : 4, mode: m.rawValue,
                             cut: pairIsCut ? 1 : 0, sigma: 0.012, occLo: 0.05, occHi: 0.14)

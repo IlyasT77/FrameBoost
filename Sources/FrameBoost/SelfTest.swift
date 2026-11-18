@@ -152,9 +152,9 @@ enum SelfTest {
                 // per real frame (33 ms at 30 FPS): one analysis + N output images
                 let fps60 = e + 2 * s < 30, fps120 = e + 4 * s < 30
                 say(String(format: "  %dx%d %@: Analyse %.2f ms/Frame, Zwischenbild %.2f ms + Anzeige %.2f ms -> 60 FPS %@, 120 FPS %@",
-                           w, h, q == .high ? "Hoch" : "Schnell", e, avg(Array(syn.dropFirst(4))), avg(Array(pre.dropFirst(4))),
+                           w, h, interp.effectiveQuality == .high ? "Hoch" : (q == .high ? "Hoch→Schnell" : "Schnell"), e, avg(Array(syn.dropFirst(4))), avg(Array(pre.dropFirst(4))),
                            fps60 ? "JA" : "NEIN", fps120 ? "JA" : "NEIN"))
-                if w == 1920 && q == .fast && !fps60 { ok = false }
+                if w <= 2560 && !fps60 { ok = false }
             }
         }
         interp.quality = .high

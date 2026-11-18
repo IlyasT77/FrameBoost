@@ -29,7 +29,7 @@ Capture Card einstecken → wird automatisch erkannt und gestartet (inkl. Ton).
 
 ## So funktioniert die Frame Generation
 1. **Doppelte Frames entfernen:** Die PS5 sendet immer 60 Hz; bei 30 FPS ist jedes Bild doppelt. FrameBoost erkennt das (Schwelle passt sich dem Rauschen der Karte an) und arbeitet mit den echten Bildern.
-2. **Bewegungsanalyse auf der GPU** in 4 Stufen (1/8 → 1/4 → 1/2 Auflösung), vorwärts und rückwärts, 16-px-Raster mit Sub-Pixel-Genauigkeit, plus Vorhersage aus dem letzten Bildpaar für schnelle Kameraschwenks.
+2. **Bewegungsanalyse auf der GPU** in 4 Stufen (1/8 → 1/4 → 1/2 Auflösung), vorwärts und rückwärts, 16-px-Raster mit Sub-Pixel-Genauigkeit (über 1080p automatisch 32 px, damit es flüssig bleibt), plus Vorhersage aus dem letzten Bildpaar für schnelle Kameraschwenks.
 3. **Bildsynthese bei jedem Bildschirm-Refresh:** Pro Pixel werden 9 Bewegungskandidaten verglichen und der passendste gewählt. Das gibt saubere Kanten an Autos und Figuren. Verdeckte Bereiche werden erkannt, HUD/Minimap bleiben stehen.
 4. **Szenenwechsel** (Menü, Kameraschnitt) werden erkannt; dort wird nicht gemorpht.
 5. Ausgabe skaliert auf Fenster/Vollbild, mit optionalem Nachschärfen.

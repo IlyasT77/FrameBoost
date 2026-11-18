@@ -139,12 +139,12 @@ final class Interpolator {
     private func estimate(_ enc: MTLComputeCommandEncoder, from x: Slot, to y: Slot, f: Fields, usePrev: Bool) {
         let tmp = f.coarse; f.coarse = f.coarsePrev; f.coarsePrev = tmp
         // 1) full search at 1/16 res, 32 px grid (vector unit 1/16 px)
-        var pc = MEParams(radius: searchRadius, blockSize: 2, window: 6, lambda: 0.006, usePrev: usePrev ? 1 : 0)
+        var pc = MEParams(radius: searchRadius, blockSize: 2, window: 6, lambda: 0.003, usePrev: usePrev ? 1 : 0)
         enc.setTexture(x.l16, index: 0); enc.setTexture(y.l16, index: 1); enc.setTexture(f.coarse, index: 2); enc.setTexture(f.coarsePrev, index: 3)
         enc.setBytes(&pc, length: MemoryLayout<MEParams>.stride, index: 0)
         dispatch(enc, pCoarse, f.coarse.width, f.coarse.height)
-        // 2) refine at 1/8
-        var p8 = MEParams(radius: 1, blockSize: 4, window: 8, lambda: 0, parentScale: 2, parentDiv: 1, ownPenalty: 0.03)
+        // 2) refine at 1/8 (+-32 px: fine details like road markings are invisible at 1/16)
+        var p8 = MEParams(radius: 4, blockSize: 4, window: 8, lambda: 0, parentScale: 2, parentDiv: 1, ownPenalty: 0.03)
         enc.setTexture(x.l8, index: 0); enc.setTexture(y.l8, index: 1); enc.setTexture(f.coarse, index: 2); enc.setTexture(f.ref8, index: 3)
         enc.setBytes(&p8, length: MemoryLayout<MEParams>.stride, index: 0)
         dispatch(enc, pRefine, f.ref8.width, f.ref8.height)

@@ -62,7 +62,6 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         self.store = store
         guard let dev = AVCaptureDevice(uniqueID: videoID) else { throw err("Gerät nicht gefunden") }
         session.beginConfiguration()
-        session.sessionPreset = .inputPriority
         let input = try AVCaptureDeviceInput(device: dev)
         guard session.canAddInput(input) else { session.commitConfiguration(); throw err("Gerät ist belegt (OBS / QuickTime schließen)") }
         session.addInput(input)

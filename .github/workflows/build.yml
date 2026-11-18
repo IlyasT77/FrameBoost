@@ -26,7 +26,7 @@ jobs:
       - name: Publish results to ci-output branch
         if: always()
         run: |
-          cp build/FrameBoost.dmg ci-output/ || true
+          mkdir -p ci-output; cp build/FrameBoost.dmg ci-output/ || true
           cd ci-output
           git init -q && git checkout -q -b ci-output
           git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "CI output ${GITHUB_SHA}"

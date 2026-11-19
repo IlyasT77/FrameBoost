@@ -36,6 +36,8 @@ final class AppModel: ObservableObject {
     let capture = CaptureManager()
     let demo = DemoSource()
     private(set) var videoFile: VideoFileSource?
+    /// video test only: decode the first seconds into memory (no decoding load while measuring)
+    var videoPreloadSeconds: Double = 0
     /// a video file used as virtual capture card
     var isFileSource: Bool { selectedVideo.hasPrefix(AppModel.filePrefix) }
     /// sources that are not real devices (demo signal, video file)
@@ -139,6 +141,7 @@ final class AppModel: ObservableObject {
         updateAudioDelay()
         if isFileSource {
             let src = VideoFileSource(url: URL(fileURLWithPath: String(selectedVideo.dropFirst(AppModel.filePrefix.count))))
+            src.preloadSeconds = videoPreloadSeconds
             guard src.open() else { errorText = "Video: \(src.error ?? "unbekannter Fehler")"; setRunning(false); return }
             videoFile = src
             src.start(store: store, audio: audio); setRunning(true)

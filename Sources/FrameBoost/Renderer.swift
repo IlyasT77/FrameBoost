@@ -57,25 +57,31 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var measuredPresented: [Double] = []
     private var measuredDrawn: [Double] = []
     private var measuredMedia: [Double] = []
+    private var measuredAllDraws: [(time: Double, media: Double)] = []
 
-    func beginMeasure() { statLock.lock(); measuredPresented = []; measuredDrawn = []; measuredMedia = []; measuring = true; statLock.unlock() }
-    func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double]) {
+    func beginMeasure() {
+        statLock.lock(); measuredPresented = []; measuredDrawn = []; measuredMedia = []; measuredAllDraws = []; measuring = true; statLock.unlock()
+    }
+    func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double], allDraws: [(time: Double, media: Double)]) {
         statLock.lock(); defer { statLock.unlock() }
         measuring = false
-        return (measuredPresented.sorted(), measuredDrawn, measuredMedia)
+        return (measuredPresented.sorted(), measuredDrawn, measuredMedia, measuredAllDraws)
     }
     private var drawPeriod: Double = 1.0 / 60.0
+    /// exact refresh period of the screen the window is on (from macOS; robust against skipped draw calls)
+    private var nominalPeriod: Double = 0
 
     /// How long the picture is held back compared to the moment it arrived from the capture card:
     /// frame generation shows the moment between the last two real frames (one real frame behind),
     /// plus GPU time and the display pipeline (~1.5 refreshes). The sound buffer uses this value.
     /// measured refresh rate of the screen the window is on
-    var displayHz: Double { statLock.lock(); defer { statLock.unlock() }; return 1 / max(drawPeriod, 0.001) }
+    var displayHz: Double { statLock.lock(); defer { statLock.unlock() }; return 1 / max(nominalPeriod > 0 ? nominalPeriod : drawPeriod, 0.001) }
 
     var videoDelay: Double {
         statLock.lock(); defer { statLock.unlock() }
-        let fg = settings.mode == .off ? drawPeriod : interval + 1.2 * drawPeriod
-        return fg + 1.5 * drawPeriod + _gpuMs / 1000
+        let p = nominalPeriod > 0 ? nominalPeriod : drawPeriod
+        let fg = settings.mode == .off ? p : interval + 1.2 * p
+        return fg + 1.5 * p + _gpuMs / 1000
     }
 
     init(interp: Interpolator, store: FrameStore, settings: RenderSettings) {
@@ -148,7 +154,11 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
         // where are we between frame A and frame B?
         let mode = settings.mode
-        let dp = drawPeriod
+        if let hz = view.window?.screen?.maximumFramesPerSecond, hz > 0 {
+            let p = 1 / Double(min(hz, view.preferredFramesPerSecond))
+            if abs(p - nominalPeriod) > 1e-6 { statLock.lock(); nominalPeriod = p; statLock.unlock() }
+        }
+        let dp = nominalPeriod > 0 ? nominalPeriod : drawPeriod
         // vsync-locked output clock, one real frame (+ a little margin) behind the signal
         let target = now - interval - 1.2 * dp
         if outClock == 0 || prevDraw == 0 {
@@ -175,6 +185,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             interp.present(frame, to: screen, sharpen: settings.sharpen, cmd: cmd)
         }
 
+        if measuring { statLock.lock(); measuredAllDraws.append((now, mode == .off ? timeB : timeA + Double(t) * (timeB - timeA))); statLock.unlock() }
         if lastShown.0 != lastSeq || abs(lastShown.1 - t) > 0.001 {
             lastShown = (lastSeq, t)
             statLock.lock()

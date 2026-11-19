@@ -27,6 +27,10 @@ final class VideoFileSource {
     private(set) var error: String?
     /// signal rate of the virtual HDMI output
     let signalHz: Double = 60
+    /// > 0: decode this many seconds into memory first and play them in a loop - no decoding while running,
+    /// exactly like a capture card that delivers ready images (used by the video test)
+    var preloadSeconds: Double = 0
+    private var preloaded: [CVPixelBuffer] = []
 
     init(url: URL) { self.url = url }
 
@@ -43,7 +47,26 @@ final class VideoFileSource {
         size = CGSize(width: abs(r.width), height: abs(r.height))
         duration = a.duration.seconds
         asset = a
-        return makeReader()
+        guard makeReader() else { return false }
+        if preloadSeconds > 0 {
+            while Double(preloaded.count) < preloadSeconds * nominalFPS, let f = readNext() {
+                // own copy (the decoder recycles its buffers)
+                var copy: CVPixelBuffer?
+                let w = CVPixelBufferGetWidth(f.0), h = CVPixelBufferGetHeight(f.0)
+                CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_32BGRA,
+                                    [kCVPixelBufferMetalCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:] as [String: Any]] as CFDictionary, &copy)
+                guard let c = copy else { break }
+                CVPixelBufferLockBaseAddress(f.0, .readOnly); CVPixelBufferLockBaseAddress(c, [])
+                let srcBPR = CVPixelBufferGetBytesPerRow(f.0), dstBPR = CVPixelBufferGetBytesPerRow(c)
+                for y in 0..<h {
+                    memcpy(CVPixelBufferGetBaseAddress(c)! + y * dstBPR, CVPixelBufferGetBaseAddress(f.0)! + y * srcBPR, min(srcBPR, dstBPR))
+                }
+                CVPixelBufferUnlockBaseAddress(c, []); CVPixelBufferUnlockBaseAddress(f.0, .readOnly)
+                preloaded.append(c)
+            }
+            audioOut = nil
+        }
+        return true
     }
 
     private func makeReader() -> Bool {
@@ -105,6 +128,11 @@ final class VideoFileSource {
     /// one tick of the virtual 60 Hz HDMI signal
     private func tick() {
         guard timer != nil, let store = store else { return }
+        if !preloaded.isEmpty {
+            let i = Int((CACurrentMediaTime() - startTime) * nominalFPS) % preloaded.count
+            store.push(preloaded[i])
+            return
+        }
         var mediaTime = CACurrentMediaTime() - startTime
         // decoder slower than real time (very large videos): skip ahead instead of blocking the signal
         if currentPTS >= 0, mediaTime - currentPTS > 0.15 {

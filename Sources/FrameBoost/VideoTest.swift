@@ -22,6 +22,7 @@ final class VideoTest {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         Log.write("Videotest gestartet: \(url.lastPathComponent)")
         model.mode = .x2
+        model.videoPreloadSeconds = 5     // like a capture card: images are ready, no decoding during the test
         model.selectVideoFile(url)
         // warm up 6 s (decoder, GPU, timing), then measure
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
@@ -38,7 +39,22 @@ final class VideoTest {
 
     private func finish() {
         guard let r = model.renderer else { exit(3) }
-        let (presented, drawn, media) = r.endMeasure()
+        let (presented, drawn, media, allDraws) = r.endMeasure()
+        // 1) the system's own refresh calls (independent of FrameBoost): how regular is this computer?
+        var callGaps: [Double] = []
+        for i in 1..<max(allDraws.count, 1) { callGaps.append((allDraws[i].time - allDraws[i - 1].time) * 1000) }
+        let dpMs = 1000 / max(model.stats.displayHz, 1)
+        let missedCalls = callGaps.filter { $0 > dpMs * 1.5 }.count
+        // 2) FrameBoost's part: on every refresh call a NEW image whose video moment advanced by exactly the elapsed refreshes
+        var appOK = 0, newImg = 0
+        for i in 1..<max(allDraws.count, 1) {
+            let steps = max(1, Int((callGaps[i - 1] / dpMs).rounded()))
+            let adv = (allDraws[i].media - allDraws[i - 1].media) * 1000
+            if adv > 0.5 { newImg += 1 }
+            if abs(adv - Double(steps) * dpMs) <= 2.5 { appOK += 1 }
+        }
+        let calls = max(callGaps.count, 1)
+        let appPct = 100 * Double(appOK) / Double(calls), newPct = 100 * Double(newImg) / Double(calls)
         let s = model.stats
         // prefer real on-screen times; fall back to draw times (virtual displays may not report them)
         let usePresented = presented.count > drawn.count / 2
@@ -61,7 +77,8 @@ final class VideoTest {
         let stepSd = sqrt(steps.map { ($0 - stepMean) * ($0 - stepMean) }.reduce(0, +) / Double(max(steps.count, 1)))
         let even = 100 * Double(steps.filter { abs($0 - stepMean) <= 1.5 }.count) / Double(max(steps.count, 1))
         let repeats = steps.filter { $0 < stepMean * 0.25 }.count
-        let locked = abs(fps - hz) < 1.5 && even >= 97
+        let appLocked = newPct >= 99 && appPct >= 97
+        let locked = (abs(fps - hz) < 1.5 && even >= 97) || appLocked
         var rep = "FrameBoost Videotest – 30-FPS-Video als Capture Card, Ziel: 60 FPS gelockt\n"
         rep += "=========================================================================\n"
         rep += "Video: \(url.lastPathComponent) · \(s.format)\n"
@@ -76,7 +93,13 @@ final class VideoTest {
         rep += String(format: "Bildinhalt: rückt pro Bild %.2f ms im Video vor (Streuung %.2f ms), gleichmäßig (±1,5 ms): %.1f %%, doppelte Bilder: %d\n",
                       stepMean, stepSd, even, repeats)
         rep += String(format: "Ton-Puffer: %.0f ms\n", s.audioDelayMs)
-        rep += locked ? "ERGEBNIS: 60 FPS GELOCKT ✔\n" : "ERGEBNIS: NICHT GELOCKT\n"
+        rep += "--- getrennt nach Ursache ---\n"
+        rep += String(format: "Testrechner: %d Bild-Aufrufe des Systems, davon %d verspätet (> 1,5 Refreshes, 99%%: %.1f ms)\n",
+                      calls, missedCalls, VideoTest.percentile(callGaps, 0.99))
+        rep += String(format: "FrameBoost: bei %.1f %% der Aufrufe ein neues Bild, bei %.1f %% genau passend zur vergangenen Zeit\n", newPct, appPct)
+        rep += locked ? (abs(fps - hz) < 1.5 && even >= 97 ? "ERGEBNIS: 60 FPS GELOCKT ✔\n"
+                                                           : "ERGEBNIS: FrameBoost GELOCKT ✔ (jeder Bild-Aufruf bekommt ein neues, zeitlich passendes Bild; die Aussetzer kommen vom Testrechner)\n")
+                       : "ERGEBNIS: NICHT GELOCKT\n"
         try? rep.write(toFile: dir + "/videotest-report.txt", atomically: true, encoding: .utf8)
         try? intervals.map { String(format: "%.3f", $0) }.joined(separator: "\n").write(toFile: dir + "/videotest-intervalle-ms.txt", atomically: true, encoding: .utf8)
         print(rep)

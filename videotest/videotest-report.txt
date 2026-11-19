@@ -1,0 +1,7 @@
+FrameBoost (Windows) Videotest – 30-FPS-Video als Capture Card, Ziel 60 FPS
+Video 1920×1080 · 30 FPS → 60-Hz-Signal (bbb_sunflower_1080p_30fps_normal.mp4)
+Eingang: Signal 60.7 Hz, echte Bilder 19.7 FPS, Duplikate 55 %
+Berechnung: CPU · Schnell · Zwischenbild 23.0 ms · Analyse 59.8 ms
+Ausgabe: 27.09 FPS · Bildabstand Mittel 36.91 ms (Ziel 16.67), Streuung 38.98 ms
+Pünktlich (±2 ms): 18.7 % · Hänger: 303
+ERGEBNIS: NICHT GELOCKT (Leistung dieses Rechners reicht nicht)

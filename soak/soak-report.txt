@@ -1,0 +1,5 @@
+FrameBoost (Windows) Dauertest
+Laufzeit 300 s, Aktionen 120
+Abstürze: keine
+Speicher: Start 155 MB, Ende 92 MB, Wachstum -17.1 MB/min
+ERGEBNIS: BESTANDEN

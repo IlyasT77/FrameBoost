@@ -1,0 +1,61 @@
+sekunde,aktion,speicher_mb,ausgabe_fps,spiel_fps
+5,Modus Auto,154.1,38.4,19.3
+10,Modus 3×,159.6,39.2,19.7
+15,Modus 6×,144.8,35.8,17.9
+20,Modus Auto,165.4,36.4,18.2
+25,Qualität Hoch,166.9,22.1,16.8
+30,Duplikate an,155.0,20.9,18.4
+35,Ton-Puffer an,170.3,22.0,17.1
+40,Ton 0 ms,164.7,21.2,17.2
+45,FPS-Anzeige an,163.7,21.6,15.7
+50,Start,165.9,21.7,16.5
+55,Geräte suchen,166.1,21.6,17.1
+60,Vollbild aus,166.7,21.4,17.0
+65,Fenster groß,179.4,22.0,17.0
+70,Modus 2×,165.3,21.9,16.2
+75,Modus 4×,170.0,22.2,16.8
+80,Modus Aus,166.9,10.6,16.8
+85,Qualität Schnell,164.4,38.3,19.3
+90,Duplikate aus,169.1,20.9,34.7
+95,Ton-Puffer aus,178.7,21.8,16.4
+100,Ton +150 ms,166.7,22.1,16.6
+105,FPS-Anzeige aus,156.9,19.1,21.6
+110,Stop,133.3,21.4,17.5
+115,Stop+Start schnell,157.2,22.0,17.3
+120,Vollbild,142.2,22.4,17.8
+125,Fenster klein,138.4,22.6,18.0
+130,Modus Auto,132.2,22.1,17.1
+135,Modus 3×,130.2,21.6,17.2
+140,Modus 6×,139.5,22.3,18.4
+145,Modus Auto,134.3,21.8,18.3
+150,Qualität Hoch,129.7,20.8,18.1
+155,Duplikate an,126.6,22.3,18.4
+160,Ton-Puffer an,128.3,21.6,16.9
+165,Ton 0 ms,118.2,21.4,18.8
+170,FPS-Anzeige an,118.1,21.9,17.5
+175,Start,122.1,21.7,17.5
+180,Geräte suchen,119.3,21.0,18.0
+185,Vollbild aus,128.6,22.0,17.0
+190,Fenster groß,114.0,21.4,16.6
+195,Modus 2×,111.2,21.3,16.8
+200,Modus 4×,100.6,22.5,16.3
+205,Modus Aus,103.7,11.1,16.3
+210,Qualität Schnell,90.0,38.2,19.2
+215,Duplikate aus,87.7,22.6,36.2
+220,Ton-Puffer aus,101.2,22.7,17.4
+225,Ton +150 ms,95.0,22.3,16.2
+230,FPS-Anzeige aus,93.7,19.5,23.0
+235,Stop,67.8,22.6,17.1
+240,Stop+Start schnell,94.5,21.9,16.9
+245,Vollbild,93.8,22.6,16.6
+250,Fenster klein,83.0,22.2,17.0
+255,Modus Auto,91.7,21.7,17.1
+260,Modus 3×,83.3,21.9,17.1
+265,Modus 6×,92.3,22.6,17.3
+270,Modus Auto,92.8,22.4,17.7
+275,Qualität Hoch,82.6,21.4,17.6
+280,Duplikate an,92.3,21.7,16.9
+285,Ton-Puffer an,83.1,21.5,16.7
+290,Ton 0 ms,83.1,21.4,17.6
+295,FPS-Anzeige an,84.2,21.7,18.3
+300,Start,91.7,22.1,17.8

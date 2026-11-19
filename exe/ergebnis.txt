@@ -1,0 +1,13 @@
+OpenCV 4.10.0 · Berechnung: CPU · Hoch
+Qualität (PSNR in dB, höher = besser) gegen das echte Zwischenbild:
+  [normal | Hoch] Frame wiederholen 18.0 · Überblenden 18.9 · FrameBoost 30.9
+  [schnelle Bewegung | Hoch] Frame wiederholen 15.1 · Überblenden 16.4 · FrameBoost 28.4
+  [normal | Schnell] Frame wiederholen 18.0 · Überblenden 18.9 · FrameBoost 28.6
+  [schnelle Bewegung | Schnell] Frame wiederholen 15.1 · Überblenden 16.4 · FrameBoost 26.2
+Doppelte Frames entfernen: OK · Szenenwechsel-Erkennung: OK
+Ruhige Szene (kleines Objekt bewegt sich 1 Pixel) wird als neues Bild erkannt: OK
+Ton-Puffer: Ziel 60 ms -> 57.4 ms, Ziel 120 ms -> 117.9 ms, Schwankung 13.7 ms OK
+Geschwindigkeit 1920x1080 (dieser Rechner):
+  Hoch: Analyse 49.1 ms/Frame (läuft parallel), Zwischenbild 40.8 ms -> 60 FPS NEIN, 120 FPS NEIN, 180 FPS NEIN
+  Schnell: Analyse 26.5 ms/Frame (läuft parallel), Zwischenbild 37.9 ms -> 60 FPS NEIN, 120 FPS NEIN, 180 FPS NEIN
+ERGEBNIS: BESTANDEN

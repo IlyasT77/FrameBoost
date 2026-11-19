@@ -1,0 +1,12 @@
+2026-11-19 20:05:46.904 FrameBoost[12578:38843] WARNING: Add NSCameraUseContinuityCameraDeviceType to your Info.plist to use AVCaptureDeviceTypeContinuityCamera.
+FrameBoost Dauertest
+====================
+Laufzeit: 600 s, Aktionen: 240 (alle 34 Funktionen mehrfach durchgeklickt)
+Abstürze: keine (App lief bis zum Ende)
+Speicher: Start 59 MB, Ende 60 MB, max 64 MB, Wachstum 0.1 MB/min
+Ausgabe-FPS (laufend): min 30, max 61
+Eingefrorene Messpunkte (läuft, aber 0 FPS): 0
+Probleme: keine
+ERGEBNIS: BESTANDEN
+
+Dauertest: beendet (exit code 0)

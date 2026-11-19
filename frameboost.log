@@ -1,0 +1,316 @@
+2026-11-19 19:57:36.310  FrameBoost dev gestartet · macOS Version 15.8.2 (Build 24H232) · --make-icon build/icon.png
+2026-11-19 19:57:37.290  FrameBoost dev gestartet · macOS Version 15.8.2 (Build 24H232) · --make-dmg-background build/dmg-bg.png 1
+2026-11-19 19:57:37.393  FrameBoost dev gestartet · macOS Version 15.8.2 (Build 24H232) · --make-dmg-background build/dmg-bg@2x.png 2
+2026-11-19 19:58:07.301  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · --selftest ci-output
+2026-11-19 19:59:40.202  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · --videotest /Users/runner/work/FrameBoost/FrameBoost/testvideo_30fps.mp4 --soak-dir /Users/runner/work/FrameBoost/FrameBoost/ci-output --seconds 40
+2026-11-19 19:59:42.271  Videotest gestartet: testvideo_30fps.mp4
+2026-11-19 19:59:44.510  Start: Video 1920×1080 · 30 FPS → 60 Hz-Signal (testvideo_30fps.mp4), Modus 2×
+2026-11-19 20:00:30.575  Videotest beendet: gelockt
+2026-11-19 20:00:30.620  Stop
+2026-11-19 20:00:32.482  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · --render60 /Users/runner/work/FrameBoost/FrameBoost/testvideo_30fps.mp4 /Users/runner/work/FrameBoost/FrameBoost/frameboost_60fps.mp4 --seconds 20
+2026-11-19 20:01:07.137  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · --render60 /Users/runner/work/FrameBoost/FrameBoost/testvideo_30fps.mp4 /Users/runner/work/FrameBoost/FrameBoost/l_fb.mp4 --seconds 20 --label FrameBoost 60 FPS
+2026-11-19 20:01:43.466  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · --render60 /Users/runner/work/FrameBoost/FrameBoost/testvideo_30fps.mp4 /Users/runner/work/FrameBoost/FrameBoost/l_orig.mp4 --seconds 20 --hold --label Original 30 FPS
+2026-11-19 20:05:29.034  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · 
+2026-11-19 20:05:37.573  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · --demo
+2026-11-19 20:05:38.149  Start: Demo-Signal, Modus 2×, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:05:46.157  FrameBoost 2.4.0 gestartet · macOS Version 15.8.2 (Build 24H232) · --soak 600 --soak-dir /Users/runner/work/FrameBoost/FrameBoost/ci-output
+2026-11-19 20:05:46.983  Dauertest gestartet: 600 s
+2026-11-19 20:05:46.985  Start: Demo-Signal, Modus 2×, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:05:49.641  Dauertest: Modus Auto
+2026-11-19 20:05:52.141  Dauertest: Modus 2×
+2026-11-19 20:05:54.641  Dauertest: Modus 3×
+2026-11-19 20:05:57.135  Dauertest: Modus 4×
+2026-11-19 20:05:59.635  Dauertest: Modus 6×
+2026-11-19 20:06:02.141  Dauertest: Modus Aus
+2026-11-19 20:06:04.642  Dauertest: Modus Auto
+2026-11-19 20:06:07.141  Dauertest: Qualität Schnell
+2026-11-19 20:06:09.642  Dauertest: Qualität Hoch
+2026-11-19 20:06:12.142  Dauertest: Schärfen 0
+2026-11-19 20:06:14.609  Dauertest: Schärfen 1
+2026-11-19 20:06:17.109  Dauertest: Schärfen 0.3
+2026-11-19 20:06:19.637  Dauertest: Duplikate aus
+2026-11-19 20:06:22.075  Dauertest: Duplikate an
+2026-11-19 20:06:24.558  Dauertest: Vergleich Überblenden an
+2026-11-19 20:06:27.092  Dauertest: Vergleich Überblenden aus
+2026-11-19 20:06:29.642  Dauertest: FPS-Anzeige aus
+2026-11-19 20:06:32.141  Dauertest: FPS-Anzeige an
+2026-11-19 20:06:34.524  Dauertest: Ton-Puffer aus
+2026-11-19 20:06:34.623  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:06:37.132  Dauertest: Ton-Puffer an
+2026-11-19 20:06:37.134  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:06:39.641  Dauertest: Ton −100 ms
+2026-11-19 20:06:42.134  Dauertest: Ton +200 ms
+2026-11-19 20:06:44.635  Dauertest: Ton 0 ms
+2026-11-19 20:06:47.141  Dauertest: Lautstärke 0
+2026-11-19 20:06:49.583  Dauertest: Lautstärke 1
+2026-11-19 20:06:52.142  Dauertest: Stop
+2026-11-19 20:06:52.239  Stop
+2026-11-19 20:06:54.633  Dauertest: Start
+2026-11-19 20:06:54.634  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:06:57.134  Dauertest: Stop+Start schnell
+2026-11-19 20:06:57.237  Stop
+2026-11-19 20:06:57.237  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:06:57.297  Stop
+2026-11-19 20:06:57.299  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:06:59.632  Dauertest: Geräte suchen
+2026-11-19 20:07:02.132  Dauertest: Fenster klein
+2026-11-19 20:07:04.633  Dauertest: Fenster groß
+2026-11-19 20:07:07.133  Dauertest: Vollbild an
+2026-11-19 20:07:09.632  Dauertest: Vollbild aus
+2026-11-19 20:07:12.132  Dauertest: Modus Auto
+2026-11-19 20:07:14.632  Dauertest: Modus 2×
+2026-11-19 20:07:17.133  Dauertest: Modus 3×
+2026-11-19 20:07:19.641  Dauertest: Modus 4×
+2026-11-19 20:07:22.141  Dauertest: Modus 6×
+2026-11-19 20:07:24.541  Dauertest: Modus Aus
+2026-11-19 20:07:27.059  Dauertest: Modus Auto
+2026-11-19 20:07:29.575  Dauertest: Qualität Schnell
+2026-11-19 20:07:32.091  Dauertest: Qualität Hoch
+2026-11-19 20:07:34.591  Dauertest: Schärfen 0
+2026-11-19 20:07:37.142  Dauertest: Schärfen 1
+2026-11-19 20:07:39.632  Dauertest: Schärfen 0.3
+2026-11-19 20:07:42.141  Dauertest: Duplikate aus
+2026-11-19 20:07:44.632  Dauertest: Duplikate an
+2026-11-19 20:07:47.132  Dauertest: Vergleich Überblenden an
+2026-11-19 20:07:49.632  Dauertest: Vergleich Überblenden aus
+2026-11-19 20:07:52.133  Dauertest: FPS-Anzeige aus
+2026-11-19 20:07:54.633  Dauertest: FPS-Anzeige an
+2026-11-19 20:07:57.133  Dauertest: Ton-Puffer aus
+2026-11-19 20:07:57.280  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:07:59.566  Dauertest: Ton-Puffer an
+2026-11-19 20:07:59.567  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:08:02.135  Dauertest: Ton −100 ms
+2026-11-19 20:08:04.635  Dauertest: Ton +200 ms
+2026-11-19 20:08:07.135  Dauertest: Ton 0 ms
+2026-11-19 20:08:09.641  Dauertest: Lautstärke 0
+2026-11-19 20:08:12.135  Dauertest: Lautstärke 1
+2026-11-19 20:08:14.641  Dauertest: Stop
+2026-11-19 20:08:14.700  Stop
+2026-11-19 20:08:17.133  Dauertest: Start
+2026-11-19 20:08:17.135  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:08:19.641  Dauertest: Stop+Start schnell
+2026-11-19 20:08:19.688  Stop
+2026-11-19 20:08:19.690  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:08:19.853  Stop
+2026-11-19 20:08:19.854  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:08:22.091  Dauertest: Geräte suchen
+2026-11-19 20:08:24.632  Dauertest: Fenster klein
+2026-11-19 20:08:27.133  Dauertest: Fenster groß
+2026-11-19 20:08:29.634  Dauertest: Vollbild an
+2026-11-19 20:08:32.133  Dauertest: Vollbild aus
+2026-11-19 20:08:34.634  Dauertest: Modus Auto
+2026-11-19 20:08:37.134  Dauertest: Modus 2×
+2026-11-19 20:08:39.634  Dauertest: Modus 3×
+2026-11-19 20:08:42.133  Dauertest: Modus 4×
+2026-11-19 20:08:44.635  Dauertest: Modus 6×
+2026-11-19 20:08:47.132  Dauertest: Modus Aus
+2026-11-19 20:08:49.591  Dauertest: Modus Auto
+2026-11-19 20:08:52.082  Dauertest: Qualität Schnell
+2026-11-19 20:08:54.608  Dauertest: Qualität Hoch
+2026-11-19 20:08:57.141  Dauertest: Schärfen 0
+2026-11-19 20:08:59.641  Dauertest: Schärfen 1
+2026-11-19 20:09:02.135  Dauertest: Schärfen 0.3
+2026-11-19 20:09:04.633  Dauertest: Duplikate aus
+2026-11-19 20:09:07.133  Dauertest: Duplikate an
+2026-11-19 20:09:09.633  Dauertest: Vergleich Überblenden an
+2026-11-19 20:09:12.133  Dauertest: Vergleich Überblenden aus
+2026-11-19 20:09:14.633  Dauertest: FPS-Anzeige aus
+2026-11-19 20:09:17.132  Dauertest: FPS-Anzeige an
+2026-11-19 20:09:19.634  Dauertest: Ton-Puffer aus
+2026-11-19 20:09:19.789  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:09:22.132  Dauertest: Ton-Puffer an
+2026-11-19 20:09:22.136  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:09:24.632  Dauertest: Ton −100 ms
+2026-11-19 20:09:27.132  Dauertest: Ton +200 ms
+2026-11-19 20:09:29.633  Dauertest: Ton 0 ms
+2026-11-19 20:09:32.132  Dauertest: Lautstärke 0
+2026-11-19 20:09:34.632  Dauertest: Lautstärke 1
+2026-11-19 20:09:37.132  Dauertest: Stop
+2026-11-19 20:09:37.238  Stop
+2026-11-19 20:09:39.633  Dauertest: Start
+2026-11-19 20:09:39.634  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:09:42.142  Dauertest: Stop+Start schnell
+2026-11-19 20:09:42.189  Stop
+2026-11-19 20:09:42.190  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:09:42.372  Stop
+2026-11-19 20:09:42.372  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:09:44.633  Dauertest: Geräte suchen
+2026-11-19 20:09:47.132  Dauertest: Fenster klein
+2026-11-19 20:09:49.632  Dauertest: Fenster groß
+2026-11-19 20:09:52.134  Dauertest: Vollbild an
+2026-11-19 20:09:54.632  Dauertest: Vollbild aus
+2026-11-19 20:09:57.132  Dauertest: Modus Auto
+2026-11-19 20:09:59.632  Dauertest: Modus 2×
+2026-11-19 20:10:02.133  Dauertest: Modus 3×
+2026-11-19 20:10:04.632  Dauertest: Modus 4×
+2026-11-19 20:10:07.134  Dauertest: Modus 6×
+2026-11-19 20:10:09.634  Dauertest: Modus Aus
+2026-11-19 20:10:12.132  Dauertest: Modus Auto
+2026-11-19 20:10:14.633  Dauertest: Qualität Schnell
+2026-11-19 20:10:17.141  Dauertest: Qualität Hoch
+2026-11-19 20:10:19.632  Dauertest: Schärfen 0
+2026-11-19 20:10:22.132  Dauertest: Schärfen 1
+2026-11-19 20:10:24.633  Dauertest: Schärfen 0.3
+2026-11-19 20:10:27.132  Dauertest: Duplikate aus
+2026-11-19 20:10:29.632  Dauertest: Duplikate an
+2026-11-19 20:10:32.133  Dauertest: Vergleich Überblenden an
+2026-11-19 20:10:34.634  Dauertest: Vergleich Überblenden aus
+2026-11-19 20:10:37.134  Dauertest: FPS-Anzeige aus
+2026-11-19 20:10:39.632  Dauertest: FPS-Anzeige an
+2026-11-19 20:10:42.132  Dauertest: Ton-Puffer aus
+2026-11-19 20:10:42.231  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:10:44.632  Dauertest: Ton-Puffer an
+2026-11-19 20:10:44.637  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:10:47.132  Dauertest: Ton −100 ms
+2026-11-19 20:10:49.632  Dauertest: Ton +200 ms
+2026-11-19 20:10:52.108  Dauertest: Ton 0 ms
+2026-11-19 20:10:54.632  Dauertest: Lautstärke 0
+2026-11-19 20:10:57.134  Dauertest: Lautstärke 1
+2026-11-19 20:10:59.508  Dauertest: Stop
+2026-11-19 20:10:59.588  Stop
+2026-11-19 20:11:02.132  Dauertest: Start
+2026-11-19 20:11:02.133  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:11:04.633  Dauertest: Stop+Start schnell
+2026-11-19 20:11:04.743  Stop
+2026-11-19 20:11:04.744  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:11:04.824  Stop
+2026-11-19 20:11:04.825  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:11:07.132  Dauertest: Geräte suchen
+2026-11-19 20:11:09.633  Dauertest: Fenster klein
+2026-11-19 20:11:12.132  Dauertest: Fenster groß
+2026-11-19 20:11:14.609  Dauertest: Vollbild an
+2026-11-19 20:11:17.132  Dauertest: Vollbild aus
+2026-11-19 20:11:19.632  Dauertest: Modus Auto
+2026-11-19 20:11:22.141  Dauertest: Modus 2×
+2026-11-19 20:11:24.634  Dauertest: Modus 3×
+2026-11-19 20:11:27.134  Dauertest: Modus 4×
+2026-11-19 20:11:29.632  Dauertest: Modus 6×
+2026-11-19 20:11:32.133  Dauertest: Modus Aus
+2026-11-19 20:11:34.632  Dauertest: Modus Auto
+2026-11-19 20:11:37.132  Dauertest: Qualität Schnell
+2026-11-19 20:11:39.633  Dauertest: Qualität Hoch
+2026-11-19 20:11:42.132  Dauertest: Schärfen 0
+2026-11-19 20:11:44.632  Dauertest: Schärfen 1
+2026-11-19 20:11:47.133  Dauertest: Schärfen 0.3
+2026-11-19 20:11:49.633  Dauertest: Duplikate aus
+2026-11-19 20:11:52.132  Dauertest: Duplikate an
+2026-11-19 20:11:54.559  Dauertest: Vergleich Überblenden an
+2026-11-19 20:11:57.132  Dauertest: Vergleich Überblenden aus
+2026-11-19 20:11:59.632  Dauertest: FPS-Anzeige aus
+2026-11-19 20:12:02.132  Dauertest: FPS-Anzeige an
+2026-11-19 20:12:04.642  Dauertest: Ton-Puffer aus
+2026-11-19 20:12:04.709  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:12:07.132  Dauertest: Ton-Puffer an
+2026-11-19 20:12:07.133  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:12:09.625  Dauertest: Ton −100 ms
+2026-11-19 20:12:12.141  Dauertest: Ton +200 ms
+2026-11-19 20:12:14.633  Dauertest: Ton 0 ms
+2026-11-19 20:12:17.134  Dauertest: Lautstärke 0
+2026-11-19 20:12:19.634  Dauertest: Lautstärke 1
+2026-11-19 20:12:22.084  Dauertest: Stop
+2026-11-19 20:12:22.140  Stop
+2026-11-19 20:12:24.632  Dauertest: Start
+2026-11-19 20:12:24.633  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:12:27.133  Dauertest: Stop+Start schnell
+2026-11-19 20:12:27.314  Stop
+2026-11-19 20:12:27.315  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:12:27.443  Stop
+2026-11-19 20:12:27.443  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:12:29.632  Dauertest: Geräte suchen
+2026-11-19 20:12:32.060  Dauertest: Fenster klein
+2026-11-19 20:12:34.632  Dauertest: Fenster groß
+2026-11-19 20:12:37.132  Dauertest: Vollbild an
+2026-11-19 20:12:39.633  Dauertest: Vollbild aus
+2026-11-19 20:12:42.132  Dauertest: Modus Auto
+2026-11-19 20:12:44.633  Dauertest: Modus 2×
+2026-11-19 20:12:47.132  Dauertest: Modus 3×
+2026-11-19 20:12:49.644  Dauertest: Modus 4×
+2026-11-19 20:12:52.141  Dauertest: Modus 6×
+2026-11-19 20:12:54.632  Dauertest: Modus Aus
+2026-11-19 20:12:57.132  Dauertest: Modus Auto
+2026-11-19 20:12:59.632  Dauertest: Qualität Schnell
+2026-11-19 20:13:02.132  Dauertest: Qualität Hoch
+2026-11-19 20:13:04.633  Dauertest: Schärfen 0
+2026-11-19 20:13:07.142  Dauertest: Schärfen 1
+2026-11-19 20:13:09.633  Dauertest: Schärfen 0.3
+2026-11-19 20:13:12.143  Dauertest: Duplikate aus
+2026-11-19 20:13:14.632  Dauertest: Duplikate an
+2026-11-19 20:13:17.133  Dauertest: Vergleich Überblenden an
+2026-11-19 20:13:19.633  Dauertest: Vergleich Überblenden aus
+2026-11-19 20:13:22.132  Dauertest: FPS-Anzeige aus
+2026-11-19 20:13:24.633  Dauertest: FPS-Anzeige an
+2026-11-19 20:13:27.133  Dauertest: Ton-Puffer aus
+2026-11-19 20:13:27.186  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:13:29.632  Dauertest: Ton-Puffer an
+2026-11-19 20:13:29.634  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:13:32.135  Dauertest: Ton −100 ms
+2026-11-19 20:13:34.635  Dauertest: Ton +200 ms
+2026-11-19 20:13:37.135  Dauertest: Ton 0 ms
+2026-11-19 20:13:39.635  Dauertest: Lautstärke 0
+2026-11-19 20:13:42.143  Dauertest: Lautstärke 1
+2026-11-19 20:13:44.608  Dauertest: Stop
+2026-11-19 20:13:44.740  Stop
+2026-11-19 20:13:47.133  Dauertest: Start
+2026-11-19 20:13:47.134  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:13:49.634  Dauertest: Stop+Start schnell
+2026-11-19 20:13:49.717  Stop
+2026-11-19 20:13:49.718  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:13:49.909  Stop
+2026-11-19 20:13:49.910  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:13:52.132  Dauertest: Geräte suchen
+2026-11-19 20:13:54.632  Dauertest: Fenster klein
+2026-11-19 20:13:57.132  Dauertest: Fenster groß
+2026-11-19 20:13:59.632  Dauertest: Vollbild an
+2026-11-19 20:14:02.144  Dauertest: Vollbild aus
+2026-11-19 20:14:04.542  Dauertest: Modus Auto
+2026-11-19 20:14:07.132  Dauertest: Modus 2×
+2026-11-19 20:14:09.632  Dauertest: Modus 3×
+2026-11-19 20:14:12.132  Dauertest: Modus 4×
+2026-11-19 20:14:14.632  Dauertest: Modus 6×
+2026-11-19 20:14:17.111  Dauertest: Modus Aus
+2026-11-19 20:14:19.634  Dauertest: Modus Auto
+2026-11-19 20:14:22.132  Dauertest: Qualität Schnell
+2026-11-19 20:14:24.633  Dauertest: Qualität Hoch
+2026-11-19 20:14:27.141  Dauertest: Schärfen 0
+2026-11-19 20:14:29.632  Dauertest: Schärfen 1
+2026-11-19 20:14:32.141  Dauertest: Schärfen 0.3
+2026-11-19 20:14:34.632  Dauertest: Duplikate aus
+2026-11-19 20:14:37.132  Dauertest: Duplikate an
+2026-11-19 20:14:39.608  Dauertest: Vergleich Überblenden an
+2026-11-19 20:14:42.132  Dauertest: Vergleich Überblenden aus
+2026-11-19 20:14:44.632  Dauertest: FPS-Anzeige aus
+2026-11-19 20:14:47.132  Dauertest: FPS-Anzeige an
+2026-11-19 20:14:49.632  Dauertest: Ton-Puffer aus
+2026-11-19 20:14:49.813  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:14:52.132  Dauertest: Ton-Puffer an
+2026-11-19 20:14:52.134  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:14:54.642  Dauertest: Ton −100 ms
+2026-11-19 20:14:57.134  Dauertest: Ton +200 ms
+2026-11-19 20:14:59.634  Dauertest: Ton 0 ms
+2026-11-19 20:15:02.124  Dauertest: Lautstärke 0
+2026-11-19 20:15:04.634  Dauertest: Lautstärke 1
+2026-11-19 20:15:07.134  Dauertest: Stop
+2026-11-19 20:15:07.227  Stop
+2026-11-19 20:15:09.644  Dauertest: Start
+2026-11-19 20:15:09.646  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:15:12.141  Dauertest: Stop+Start schnell
+2026-11-19 20:15:12.176  Stop
+2026-11-19 20:15:12.178  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:15:12.352  Stop
+2026-11-19 20:15:12.353  Start: Demo-Signal, Modus Auto, Qualität Hoch (bis 1080p, darüber automatisch Schnell)
+2026-11-19 20:15:14.633  Dauertest: Geräte suchen
+2026-11-19 20:15:17.132  Dauertest: Fenster klein
+2026-11-19 20:15:19.632  Dauertest: Fenster groß
+2026-11-19 20:15:22.132  Dauertest: Vollbild an
+2026-11-19 20:15:24.632  Dauertest: Vollbild aus
+2026-11-19 20:15:27.133  Dauertest: Modus Auto
+2026-11-19 20:15:29.633  Dauertest: Modus 2×
+2026-11-19 20:15:32.132  Dauertest: Modus 3×
+2026-11-19 20:15:34.632  Dauertest: Modus 4×
+2026-11-19 20:15:37.132  Dauertest: Modus 6×
+2026-11-19 20:15:39.632  Dauertest: Modus Aus
+2026-11-19 20:15:42.132  Dauertest: Modus Auto
+2026-11-19 20:15:44.632  Dauertest: Qualität Schnell
+2026-11-19 20:15:47.132  Dauertest: Qualität Hoch
+2026-11-19 20:15:47.140  Dauertest beendet
+2026-11-19 20:15:47.189  Stop

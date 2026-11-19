@@ -77,7 +77,8 @@ Die zusätzliche Verzögerung beträgt etwa ein echtes Bild (≈ 33 ms bei 30 FP
 ## Getestet
 
 Jede Version läuft vor der Veröffentlichung automatisch durch Selbsttest (Bildqualität, Ton-Sync, Duplikate, Szenenwechsel)
-und einen Dauertest, der 10 Minuten lang alle Funktionen durchklickt. Ergebnisse und behobene Fehler: [TESTBERICHT.md](TESTBERICHT.md).
+und einen Dauertest, der 10 Minuten lang alle Funktionen durchklickt. Dazu läuft ein echter Film als 30-FPS-„Capture Card“
+durch die App: **60 FPS gelockt** (Mac, 99,6 % neue Bilder pro Refresh). Ergebnisse und behobene Fehler: [TESTBERICHT.md](TESTBERICHT.md).
 
 ## Probleme melden
 
@@ -89,7 +90,7 @@ Nach einem Absturz bietet FrameBoost den Bericht beim nächsten Start automatisc
 ## Selbst bauen
 
 **macOS** (Xcode Command Line Tools): `./scripts/build_dmg.sh` → `build/FrameBoost.dmg`
-Selbsttest: `FrameBoost.app/Contents/MacOS/FrameBoost --selftest ordner/` · Dauertest: `--soak 600 ordner/`
+Selbsttest: `FrameBoost.app/Contents/MacOS/FrameBoost --selftest ordner/` · Dauertest: `--soak 600 --soak-dir ordner/` · Videotest: `--videotest video.mp4 --soak-dir ordner/`
 
 **Windows** (Python 3.12): `cd windows && pip install -r requirements.txt && python main.py`
 EXE: siehe `.github/workflows/windows.yml` (PyInstaller) · Selbsttest: `python main.py --selftest ordner`

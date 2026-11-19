@@ -16,8 +16,8 @@ Der Ton wird so verzögert, dass Bild und Ton synchron bleiben.
 
 | System | Datei | Voraussetzungen |
 |---|---|---|
-| macOS | [FrameBoost.dmg](../../releases/latest) | macOS 14 oder neuer, Apple Silicon oder Intel |
-| Windows | [FrameBoost.exe](../../releases/latest) | Windows 10/11 (64 Bit) |
+| macOS | [FrameBoost.dmg](../../releases/latest) (3 MB) | macOS 14 oder neuer · Apple Silicon (M1–M5, nativ) und Intel |
+| Windows | [FrameBoost.exe](../../releases/latest) (64 MB) | Windows 10/11 (64 Bit), Grafikkarte empfohlen |
 
 **Erster Start auf dem Mac:** Die App ist (noch) nicht bei Apple notarisiert. Rechtsklick auf FrameBoost → *Öffnen* → *Öffnen*.
 **Erster Start unter Windows:** Bei der SmartScreen-Warnung auf *Weitere Informationen* → *Trotzdem ausführen* klicken.
@@ -32,6 +32,15 @@ Der Ton wird so verzögert, dass Bild und Ton synchron bleiben.
 
 **Günstige Karten:** USB-3.0-Sticks mit dem Chip **MS2130** (ca. 15–35 €) liefern 1080p mit 60 Hz ohne Komprimierung und reichen völlig.
 Teurere Karten (Elgato, AVerMedia) funktionieren ebenfalls.
+
+**Warum ist die EXE größer als die DMG?** Die Mac-App nutzt Metal, SwiftUI und AVFoundation, die in macOS eingebaut sind.
+Die Windows-EXE muss Python, Qt (Oberfläche), OpenCV (Bildverarbeitung) und NumPy mitbringen.
+
+## Ohne Konsole ausprobieren
+
+Im Quellen-Menü *Videodatei als Capture Card …* wählen: Ein beliebiges Video (z. B. eine 30-FPS-Aufnahme) läuft dann
+genau wie eine Capture Card – als 60-Hz-Signal, jedes Bild doppelt, wie bei der PS5. So lässt sich die Frame Generation
+ohne Konsole und Karte testen. Das *Demo-Signal* zeigt zusätzlich einen Bild/Ton-Sync-Test.
 
 ## Bedienung
 

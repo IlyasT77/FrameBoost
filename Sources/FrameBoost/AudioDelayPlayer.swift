@@ -27,9 +27,22 @@ final class AudioDelayPlayer {
     /// drift since the last timing in seconds (diagnostics)
     private(set) var lastError: Double = 0
 
+    private var flushObserver: NSObjectProtocol?
+    private(set) var autoFlushes = 0
+
     init() {
         sync.addRenderer(renderer)
         sync.delaysRateChangeUntilHasSufficientMediaData = false   // our timing must apply immediately
+        // macOS flushes the renderer when the output device changes (e.g. headphones plugged in): re-time
+        flushObserver = NotificationCenter.default.addObserver(forName: .AVSampleBufferAudioRendererWasFlushedAutomatically,
+                                                               object: renderer, queue: nil) { [weak self] _ in
+            guard let self = self else { return }
+            self.autoFlushes += 1
+            self.lock.lock(); let pts = self.lastPTS, arr = self.lastArrival, go = self.anchored && pts.isValid && !self.pending
+            if go { self.pending = true }
+            self.lock.unlock()
+            if go { self.ctl.async { self.retime(pts: pts, arrival: arr) } }
+        }
     }
 
     var volume: Float {
@@ -91,6 +104,7 @@ final class AudioDelayPlayer {
         let now = CACurrentMediaTime()
         let mediaNow = CMTimeAdd(pts, CMTime(seconds: (now - arrival) - bufferDelay, preferredTimescale: 1_000_000_000))
         sync.setRate(1.0, time: mediaNow, atHostTime: CMClockGetTime(CMClockGetHostTimeClock()))
+        if sync.rate == 0 { sync.rate = 1 }
         let b = offset(pts: pts, arrival: arrival)
         lock.lock(); baseline = b; pending = false; retimeCount += 1; lock.unlock()
     }
@@ -98,8 +112,8 @@ final class AudioDelayPlayer {
     var debugInfo: String {
         let st: String
         switch renderer.status { case .rendering: st = "rendering"; case .failed: st = "failed"; default: st = "unknown" }
-        return String(format: "status=%@ err=%@ rate=%.2f baseline=%.1fms outLatency=%.1fms", st, renderer.error?.localizedDescription ?? "-",
-                      sync.rate, (baseline ?? 0) * 1000, outputLatency * 1000)
+        return String(format: "status=%@ err=%@ rate=%.2f baseline=%.1fms outLatency=%.1fms autoFlush=%d", st, renderer.error?.localizedDescription ?? "-",
+                      sync.rate, (baseline ?? 0) * 1000, outputLatency * 1000, autoFlushes)
     }
 
     /// true if macOS has a sound output device (test servers often have none)

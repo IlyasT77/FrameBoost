@@ -10,6 +10,9 @@ enum SelfTest {
     static func run(outputDir: String) -> Bool {
         var log = ""
         func say(_ s: String) { print(s); log += s + "\n" }
+        // no App Nap / timer coalescing during the test (the app does the same while playing)
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Selbsttest")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
         try? FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
         guard let device = MTLCreateSystemDefaultDevice() else { say("FEHLER: kein Metal-Gerät"); return false }
         say("GPU: \(device.name)")
@@ -146,7 +149,7 @@ enum SelfTest {
                 if i == 0 { trace.append("start") }
                 if el > 0.4 && player.delay < 0.15 { player.delay = 0.20; trace.append("delay->200ms") }
                 if el > 0.08 && !(el > 0.4 && el < 0.48) { errs.append(abs(player.lastError)) }
-                if i % 10 == 0 { trace.append(String(format: "%.0fms:%.1f", el * 1000, player.lastError * 1000)) }
+                if i % 10 == 0 { trace.append(String(format: "%.0fms:%.1f(r%d)", el * 1000, player.lastError * 1000, player.retimeCount)) }
                 i += 1
                 Thread.sleep(forTimeInterval: 0.008)
             }

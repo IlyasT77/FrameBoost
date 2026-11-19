@@ -45,6 +45,7 @@ struct FrameBoostApp: App {
                 Button("Frame Gen: 2×") { model.mode = .x2 }.keyboardShortcut("2", modifiers: [.command])
                 Button("Frame Gen: 3×") { model.mode = .x3 }.keyboardShortcut("3", modifiers: [.command])
                 Button("Frame Gen: 4×") { model.mode = .x4 }.keyboardShortcut("4", modifiers: [.command])
+                Button("Frame Gen: 6×") { model.mode = .x6 }.keyboardShortcut("6", modifiers: [.command])
                 Divider()
                 Button("FPS-Anzeige ein/aus") { model.showHUD.toggle() }.keyboardShortcut("i", modifiers: [.command])
                 Button(model.running ? "Stop" : "Start") { model.running ? model.stop() : model.start() }.keyboardShortcut("s", modifiers: [.command, .shift])

@@ -21,11 +21,17 @@ Capture Card einstecken → wird automatisch erkannt und gestartet (inkl. Ton).
 | Taste | Funktion |
 |---|---|
 | ⌃⌘F | Vollbild |
-| ⌘0 / ⌘1 / ⌘2 / ⌘3 / ⌘4 | Frame Gen Aus / Auto / 2× / 3× / 4× |
+| ⌘0 / ⌘1 / ⌘2 / ⌘3 / ⌘4 / ⌘6 | Frame Gen Aus / Auto / 2× / 3× / 4× / 6× |
 | ⌘I | FPS-Anzeige |
 | ⇧⌘S | Start / Stop |
 
-**Auto** = so viele Bilder wie dein Bildschirm kann (60 Hz → 60 FPS, ProMotion/120 Hz → 120 FPS).
+**Auto** = so viele Bilder wie dein Bildschirm kann (60 Hz → 60 FPS, 120 Hz → 120 FPS, 180 Hz → 180 FPS).
+Auf einem 180-Hz-Monitor laufen Auto (180), 3× (90) und 2× (60) besonders gleichmäßig.
+
+**Ton:** läuft durch einen Puffer und wird genau so lange verzögert wie das Bild (Bild und Ton synchron).
+Feinabstimmung in den Einstellungen; Test: Demo-Signal → weißes Quadrat und Piepton kommen gleichzeitig.
+
+**1080p-Monitor:** 1080p-Capture im Vollbild wird 1:1 angezeigt, ohne Skalierung.
 
 ## So funktioniert die Frame Generation
 1. **Doppelte Frames entfernen:** Die PS5 sendet immer 60 Hz; bei 30 FPS ist jedes Bild doppelt. FrameBoost erkennt das (Schwelle passt sich dem Rauschen der Karte an) und arbeitet mit den echten Bildern.

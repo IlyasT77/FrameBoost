@@ -8,7 +8,7 @@ struct MetalView: NSViewRepresentable {
         v.colorPixelFormat = .bgra8Unorm
         v.framebufferOnly = false
         v.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        v.preferredFramesPerSecond = 120   // ProMotion / 120 Hz monitors; 60 Hz displays simply run at 60
+        v.preferredFramesPerSecond = 240   // as fast as the screen allows: 60 / 120 / 144 / 180 / 240 Hz
         v.enableSetNeedsDisplay = false
         v.isPaused = false
         v.delegate = model.renderer
@@ -87,7 +87,7 @@ struct ContentView: View {
         VStack(alignment: .trailing, spacing: 2) {
             Text("\(Int(model.stats.output.rounded())) FPS").font(.system(size: 26, weight: .bold, design: .monospaced)).foregroundStyle(.green)
             Text("Spiel \(Int(model.stats.game.rounded())) FPS · Signal \(Int(model.stats.signal.rounded())) Hz")
-            Text(String(format: "GPU %.1f ms · Duplikate entfernt %d%%", model.stats.gpu, Int(model.stats.dupes * 100)))
+            Text(String(format: "Bildschirm %d Hz · GPU %.1f ms · Duplikate %d%%", Int(model.stats.displayHz.rounded()), model.stats.gpu, Int(model.stats.dupes * 100)))
             if model.audioSync { Text(String(format: "Ton-Puffer %.0f ms", model.stats.audioDelayMs)) }
             Text(model.stats.format)
         }
@@ -173,7 +173,7 @@ struct SettingsView: View {
                 Toggle("Vergleich: nur überblenden (schlechter, zum Testen)", isOn: $model.compareBlend)
             }
             Section("Bild") {
-                Slider(value: $model.sharpen, in: 0...1) { Text("Schärfen") }
+                Slider(value: $model.sharpen, in: 0...1) { Text("Schärfen (beim Skalieren)") }
                 Toggle("FPS-Anzeige", isOn: $model.showHUD)
             }
             Section {

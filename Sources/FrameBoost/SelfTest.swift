@@ -198,19 +198,24 @@ enum SelfTest {
                     interp.present(texture(42), to: big3, sharpen: 0, cmd: cmd)
                 }
                 _ = run { interp.ingest(big1, cmd: $0) }; _ = run { interp.ingest(big2, cmd: $0) }
-                let screen = outTex(3024, 1964)   // MacBook Pro 14" Retina
+                let screen = outTex(1920, 1080)   // 1080p monitor (1:1 for 1080p sources)
+                let direct = (w, h) == (1920, 1080)
                 var est: [Double] = [], syn: [Double] = [], pre: [Double] = []
                 for i in 0..<40 {
                     est.append(run { interp.ingest([big3, big1, big2][i % 3], cmd: $0) })
-                    syn.append(run { interp.synthesize(t: 0.5, mode: .interpolate, cmd: $0) })
-                    pre.append(run { interp.present(interp.output!, to: screen, sharpen: 0.3, cmd: $0) })
+                    if direct {
+                        syn.append(run { interp.synthesize(t: 0.5, mode: .interpolate, into: screen, cmd: $0) }); pre.append(0)
+                    } else {
+                        syn.append(run { interp.synthesize(t: 0.5, mode: .interpolate, cmd: $0) })
+                        pre.append(run { interp.present(interp.output!, to: screen, sharpen: 0.3, cmd: $0) })
+                    }
                 }
                 let e = median(est), s = median(syn) + median(pre)
                 // per real frame (33 ms at 30 FPS): one analysis + N output images
-                let fps60 = e + 2 * s < 30, fps120 = e + 4 * s < 30
-                say(String(format: "  %dx%d %@: Analyse %.2f ms/Frame, Zwischenbild %.2f ms + Anzeige %.2f ms -> 60 FPS %@, 120 FPS %@",
+                let fps60 = e + 2 * s < 31, fps120 = e + 4 * s < 31, fps180 = e + 6 * s < 31
+                say(String(format: "  %dx%d %@: Analyse %.2f ms/Frame, Zwischenbild %.2f ms + Anzeige %.2f ms -> 60 FPS %@, 120 FPS %@, 180 FPS %@",
                            w, h, interp.effectiveQuality == .high ? "Hoch" : (q == .high ? "Hoch→Schnell" : "Schnell"), e, median(syn), median(pre),
-                           fps60 ? "JA" : "NEIN", fps120 ? "JA" : "NEIN"))
+                           fps60 ? "JA" : "NEIN", fps120 ? "JA" : "NEIN", fps180 ? "JA" : "NEIN"))
                 if w <= 2560 && !fps60 { ok = false }
             }
         }

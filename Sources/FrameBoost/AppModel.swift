@@ -26,7 +26,7 @@ final class AppModel: ObservableObject {
     @Published var errorText: String?
     @Published var stats = Stats()
 
-    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, audioDelayMs = 0.0, outputLatencyMs = 0.0, format = "" }
+    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, audioDelayMs = 0.0, outputLatencyMs = 0.0, displayHz = 0.0, format = "" }
 
     let store = FrameStore()
     let settings = RenderSettings()
@@ -172,6 +172,7 @@ final class AppModel: ObservableObject {
         stats.output = renderer?.outputFPS ?? 0
         stats.gpu = renderer?.gpuMs ?? 0
         stats.dupes = store.duplicateShare
+        stats.displayHz = renderer?.displayHz ?? 0
         updateAudioDelay()
         if stats.signal == 0 && selectedVideo != AppModel.demoID {
             errorText = "Kein Signal – PS5 an? In der PS5: Einstellungen → System → HDMI → „HDCP aktivieren“ AUS."

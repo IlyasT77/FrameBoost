@@ -8,15 +8,17 @@ enum BoostMode: String, CaseIterable, Identifiable {
     case x2 = "2×"
     case x3 = "3×"
     case x4 = "4×"
+    case x6 = "6×"
     var id: String { rawValue }
-    var steps: Int? { switch self { case .x2: return 2; case .x3: return 3; case .x4: return 4; default: return nil } }
+    var steps: Int? { switch self { case .x2: return 2; case .x3: return 3; case .x4: return 4; case .x6: return 6; default: return nil } }
     var help: String {
         switch self {
         case .off: return "Keine Frame Generation (Original)"
-        case .auto: return "So viele Bilder wie der Bildschirm kann (60 Hz → 60, 120 Hz → 120 FPS)"
+        case .auto: return "So viele Bilder wie der Bildschirm kann (60 Hz → 60, 180 Hz → 180 FPS)"
         case .x2: return "Doppelte Bildrate (30 → 60 FPS)"
         case .x3: return "Dreifache Bildrate (30 → 90 FPS)"
         case .x4: return "Vierfache Bildrate (30 → 120 FPS)"
+        case .x6: return "Sechsfache Bildrate (30 → 180 FPS, für 180-Hz-Monitore)"
         }
     }
 }
@@ -50,6 +52,9 @@ final class Renderer: NSObject, MTKViewDelegate {
     /// How long the picture is held back compared to the moment it arrived from the capture card:
     /// frame generation shows the moment between the last two real frames (one real frame behind),
     /// plus GPU time and the display pipeline (~1.5 refreshes). The sound buffer uses this value.
+    /// measured refresh rate of the screen the window is on
+    var displayHz: Double { statLock.lock(); defer { statLock.unlock() }; return 1 / max(drawPeriod, 0.001) }
+
     var videoDelay: Double {
         statLock.lock(); defer { statLock.unlock() }
         let fg = settings.mode == .off ? 0 : interval
@@ -112,8 +117,14 @@ final class Renderer: NSObject, MTKViewDelegate {
             if let m = mode.steps { t = min(floor(phase * Float(m) + 0.25) / Float(m), 1) } else { t = phase }
         }
         let synthMode: SynthMode = mode == .off ? .passthrough : (settings.blendOnly ? .blend : .interpolate)
-        interp.synthesize(t: t, mode: synthMode, cmd: cmd)
-        interp.present(frame, to: drawable.texture, sharpen: settings.sharpen, cmd: cmd)
+        let screen = drawable.texture
+        if screen.width == interp.width && screen.height == interp.height {
+            // 1:1 (e.g. 1080p capture on a 1080p monitor in fullscreen): no scaling pass at all
+            interp.synthesize(t: t, mode: synthMode, into: screen, cmd: cmd)
+        } else {
+            interp.synthesize(t: t, mode: synthMode, cmd: cmd)
+            interp.present(frame, to: screen, sharpen: settings.sharpen, cmd: cmd)
+        }
 
         if lastShown.0 != lastSeq || abs(lastShown.1 - t) > 0.001 {
             lastShown = (lastSeq, t)

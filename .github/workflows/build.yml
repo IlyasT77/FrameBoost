@@ -1,6 +1,7 @@
 name: Build macOS DMG
 on:
   push:
+    paths: ['Sources/**', 'scripts/**', 'Package.swift', '.github/workflows/build.yml']
   workflow_dispatch:
 permissions:
   contents: write

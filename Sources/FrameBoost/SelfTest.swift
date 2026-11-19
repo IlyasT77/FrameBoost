@@ -272,6 +272,13 @@ enum DMGBackground {
         }
         glow(165, CGColor(red: 1, green: 0.25, blue: 0.55, alpha: 0.45))
         glow(495, CGColor(red: 0.45, green: 0.35, blue: 1, alpha: 0.35))
+        // mid-grey pills behind Finder's icon labels: readable with black (light mode) and white (dark mode) text
+        ctx.setFillColor(CGColor(gray: 0.47, alpha: 1))
+        for x: CGFloat in [165, 495] {
+            ctx.addPath(CGPath(roundedRect: CGRect(x: x - 62, y: CGFloat(H) - 274 - 11, width: 124, height: 22),
+                               cornerWidth: 11, cornerHeight: 11, transform: nil))
+            ctx.fillPath()
+        }
         // arrow
         ctx.setLineCap(.round)
         ctx.setLineWidth(9)

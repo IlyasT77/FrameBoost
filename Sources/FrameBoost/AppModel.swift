@@ -24,6 +24,8 @@ final class AppModel: ObservableObject {
     @Published var audioOffsetMs: Double = 0 { didSet { defaults.set(audioOffsetMs, forKey: "audioOffset"); updateAudioDelay() } }
     @Published var running = false
     @Published var errorText: String?
+    /// crash text of the previous run (shown once, included in bug reports)
+    var lastCrash: String?
     @Published var stats = Stats()
 
     struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, audioDelayMs = 0.0, outputLatencyMs = 0.0, displayHz = 0.0, format = "" }

@@ -39,6 +39,17 @@ struct FrameBoostApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear {
                     let args = CommandLine.arguments
+                    if !args.contains("--soak"), !args.contains("--demo"), let crash = Log.takePreviousCrash() {
+                        model.lastCrash = crash
+                        DispatchQueue.main.async {
+                            let a = NSAlert()
+                            a.messageText = "FrameBoost wurde beim letzten Mal unerwartet beendet"
+                            a.informativeText = "Möchtest du einen Fehlerbericht erstellen? Er hilft, den Fehler zu finden."
+                            a.addButton(withTitle: "Fehlerbericht erstellen")
+                            a.addButton(withTitle: "Später")
+                            if a.runModal() == .alertFirstButtonReturn { BugReport.create(model) }
+                        }
+                    }
                     if args.contains("--demo") { model.selectedVideo = AppModel.demoID; model.start() }
                     if let i = args.firstIndex(of: "--soak"), FrameBoostApp.soak == nil {
                         let secs = i + 1 < args.count ? Double(args[i + 1]) ?? 600 : 600
@@ -63,6 +74,15 @@ struct FrameBoostApp: App {
                 Button("FPS-Anzeige ein/aus") { model.showHUD.toggle() }.keyboardShortcut("i", modifiers: [.command])
                 Button(model.running ? "Stop" : "Start") { model.running ? model.stop() : model.start() }.keyboardShortcut("s", modifiers: [.command, .shift])
             }
+            CommandGroup(replacing: .help) {
+                Button("Fehlerbericht erstellen …") { BugReport.create(model) }
+                Button("Protokoll-Ordner öffnen") { NSWorkspace.shared.open(Log.dir) }
+                Divider()
+                Button("FrameBoost auf GitHub") { NSWorkspace.shared.open(BugReport.repo) }
+            }
+        }
+        Settings {
+            SettingsView(model: model).preferredColorScheme(.dark)
         }
     }
 }

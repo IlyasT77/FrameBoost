@@ -32,7 +32,7 @@ jobs:
         run: brew install create-dmg
       - name: Build app + DMG
         env:
-          VERSION: "2.2.0"
+          VERSION: "2.3.0"
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
@@ -60,20 +60,32 @@ jobs:
           kill $PID || true
       - name: Soak test (10 min, every feature, memory + crash check)
         if: always()
-        timeout-minutes: 16
+        timeout-minutes: 18
         run: |
-          mkdir -p ci-output
           set +e
+          mkdir -p ci-output
           ./build/FrameBoost.app/Contents/MacOS/FrameBoost --soak 600 "$PWD/ci-output" > ci-output/soak-stdout.txt 2>&1 &
           PID=$!
-          sleep 300
-          screencapture -x ci-output/soak_5min.png
-          wait $PID
-          CODE=$?
-          echo "exit code: $CODE" >> ci-output/soak-stdout.txt
-          cp ~/Library/Logs/FrameBoost/frameboost.log ci-output/ 2>/dev/null
-          cp ~/Library/Logs/FrameBoost/last-crash.txt ci-output/ 2>/dev/null
-          cp ~/Library/Logs/DiagnosticReports/FrameBoost* ci-output/ 2>/dev/null
+          RESULT="hängt"
+          for i in $(seq 1 180); do
+            sleep 5
+            [ $i -eq 60 ] && screencapture -x ci-output/soak_5min.png
+            if ! kill -0 $PID 2>/dev/null; then
+              wait $PID; CODE=$?
+              RESULT="beendet (exit code $CODE)"
+              break
+            fi
+          done
+          if kill -0 $PID 2>/dev/null; then
+            screencapture -x ci-output/soak_haenger.png
+            sample $PID 5 -file ci-output/soak_haenger_stack.txt || true
+            kill -9 $PID
+            CODE=99
+          fi
+          echo "Dauertest: $RESULT" | tee -a ci-output/soak-stdout.txt
+          cp ~/Library/Logs/FrameBoost/frameboost.log ci-output/ 2>/dev/null || true
+          cp ~/Library/Logs/FrameBoost/last-crash.txt ci-output/ 2>/dev/null || true
+          cp ~/Library/Logs/DiagnosticReports/FrameBoost* ci-output/ 2>/dev/null || true
           exit $CODE
       - name: Installer window screenshot
         if: always()

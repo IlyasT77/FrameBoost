@@ -72,7 +72,7 @@ class AudioPlayer:
 
     def start_output(self) -> bool:
         if sd is None:
-            self.error = "Audio-Bibliothek fehlt"
+            self.error = "Ton nicht verfügbar (Audio-Bibliothek fehlt) – das Bild läuft ohne Ton weiter."
             return False
         try:
             self.line.reset()
@@ -83,7 +83,9 @@ class AudioPlayer:
             self.set_delay(self.delay)
             return True
         except Exception as e:
-            self.error = f"Ton-Ausgabe: {e}"
+            self.error = "Kein Lautsprecher/Kopfhörer gefunden – das Bild läuft ohne Ton weiter."
+            from .applog import log
+            log.info("Ton-Ausgabe nicht verfügbar: %s", e)
             self.out_stream = None
             return False
 
@@ -98,7 +100,9 @@ class AudioPlayer:
             self.in_stream.start()
             return True
         except Exception as e:
-            self.error = f"Ton-Eingang: {e}"
+            self.error = "Der Ton der Capture Card lässt sich nicht öffnen (in den Einstellungen eine andere Audio-Quelle wählen)."
+            from .applog import log
+            log.info("Ton-Eingang nicht verfügbar: %s", e)
             self.in_stream = None
             return False
 

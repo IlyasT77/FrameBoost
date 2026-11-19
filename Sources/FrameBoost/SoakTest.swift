@@ -17,6 +17,8 @@ final class SoakTest {
     private var lastAction = "start"
     private var problems: [String] = []
     private var actionsDone = 0
+    private var activity: NSObjectProtocol?
+    private weak var window: NSWindow?
 
     init(model: AppModel, duration: Double, dir: String) {
         self.model = model; self.duration = duration; self.dir = dir
@@ -64,15 +66,15 @@ final class SoakTest {
             ("Start", { m.start() }),
             ("Stop+Start schnell", { m.stop(); m.start(); m.stop(); m.start() }),
             ("Geräte suchen", { m.refreshDevices(autostart: false) }),
-            ("Fenster klein", { SoakTest.resize(900, 540) }),
-            ("Fenster groß", { SoakTest.resize(1500, 900) }),
-            ("Vollbild an", { NSApp.windows.first { $0.isVisible }?.toggleFullScreen(nil) }),
-            ("Vollbild aus", { NSApp.windows.first { $0.isVisible }?.toggleFullScreen(nil) }),
+            ("Fenster klein", { [weak self] in self?.resize(900, 540) }),
+            ("Fenster groß", { [weak self] in self?.resize(1500, 900) }),
+            ("Vollbild an", { [weak self] in if let w = self?.window, !w.styleMask.contains(.fullScreen) { w.toggleFullScreen(nil) } }),
+            ("Vollbild aus", { [weak self] in if let w = self?.window, w.styleMask.contains(.fullScreen) { w.toggleFullScreen(nil) } }),
         ]
     }
 
-    private static func resize(_ w: CGFloat, _ h: CGFloat) {
-        guard let win = NSApp.windows.first(where: { $0.isVisible }), !win.styleMask.contains(.fullScreen) else { return }
+    private func resize(_ w: CGFloat, _ h: CGFloat) {
+        guard let win = window, !win.styleMask.contains(.fullScreen) else { return }
         win.setFrame(NSRect(x: 40, y: 40, width: w, height: h), display: true, animate: false)
     }
 
@@ -80,9 +82,14 @@ final class SoakTest {
         Log.write("Dauertest gestartet: \(Int(duration)) s")
         t0 = CACurrentMediaTime()
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        // the test must not be slowed down by App Nap while the app is stopped / in the background
+        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Dauertest")
+        window = NSApp.windows.first { $0.isVisible && $0.canBecomeMain }
         actions[0].1()
-        actionTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in self?.nextAction() }
-        sampleTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.sample() }
+        let a = Timer(timeInterval: 2.5, repeats: true) { [weak self] _ in self?.nextAction() }
+        let b = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.sample() }
+        RunLoop.main.add(a, forMode: .common); RunLoop.main.add(b, forMode: .common)   // also during window animations
+        actionTimer = a; sampleTimer = b
     }
 
     private func nextAction() {
@@ -91,6 +98,7 @@ final class SoakTest {
         let (name, action) = list[step]
         lastAction = name
         actionsDone += 1
+        Log.write("Dauertest: \(name)")
         action()
         if CACurrentMediaTime() - t0 > duration { finish() }
     }
@@ -134,6 +142,7 @@ final class SoakTest {
         try? report.write(toFile: dir + "/soak-report.txt", atomically: true, encoding: .utf8)
         try? csv.write(toFile: dir + "/soak-log.csv", atomically: true, encoding: .utf8)
         Log.write("Dauertest beendet")
+        if let a = activity { ProcessInfo.processInfo.endActivity(a) }
         print(report)
         model.stop()
         let code: Int32 = problems.isEmpty ? 0 : 2

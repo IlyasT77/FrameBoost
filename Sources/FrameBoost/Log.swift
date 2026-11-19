@@ -41,7 +41,8 @@ enum Log {
     /// Text of the crash marker of the previous run (nil if the last run ended normally).
     static func takePreviousCrash() -> String? {
         guard let s = try? String(contentsOf: crashMarker, encoding: .utf8), !s.isEmpty else { return nil }
-        try? FileManager.default.removeItem(at: crashMarker)
+        // empty it but keep the open descriptor of the crash handler valid
+        if crashFD >= 0 { ftruncate(crashFD, 0) } else { try? FileManager.default.removeItem(at: crashMarker) }
         return s
     }
 

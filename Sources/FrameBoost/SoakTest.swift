@@ -136,6 +136,7 @@ final class SoakTest {
         Log.write("Dauertest beendet")
         print(report)
         model.stop()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(problems.isEmpty ? 0 : 2) }
+        let code: Int32 = problems.isEmpty ? 0 : 2
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(code) }
     }
 }

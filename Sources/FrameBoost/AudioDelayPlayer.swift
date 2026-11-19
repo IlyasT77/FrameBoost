@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import QuartzCore
+import CoreAudio
 
 /// Plays the capture card's sound through a buffer, delayed by exactly as long as the picture needs
 /// (frame generation holds back one real frame + GPU + display). Picture and sound stay in sync.
@@ -77,6 +78,22 @@ final class AudioDelayPlayer {
         let offset = atHost.seconds - CACurrentMediaTime()
         let target = CMTimeAdd(hostNow, CMTime(seconds: offset, preferredTimescale: 1_000_000_000))
         sync.setRate(1.0, time: pts, atHostTime: target)
+    }
+
+    var debugInfo: String {
+        let st: String
+        switch renderer.status { case .rendering: st = "rendering"; case .failed: st = "failed"; default: st = "unknown" }
+        return String(format: "status=%@ err=%@ rate=%.2f time=%.3f", st, renderer.error?.localizedDescription ?? "-", sync.rate, sync.currentTime().seconds)
+    }
+
+    /// true if macOS has a sound output device (test servers often have none)
+    static var hasOutputDevice: Bool {
+        var dev = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                              mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        let r = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &dev)
+        return r == noErr && dev != 0
     }
 
     func stop() {

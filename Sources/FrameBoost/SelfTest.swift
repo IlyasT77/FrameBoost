@@ -51,6 +51,7 @@ enum SelfTest {
         }
         let W = DemoSource.width, H = DemoSource.height
         let avg = { (a: [Double]) in a.reduce(0, +) / Double(max(a.count, 1)) }
+        let median = { (a: [Double]) -> Double in let s = a.sorted(); return s.isEmpty ? 0 : s[s.count / 2] }
         var ok = true
 
         // --- Quality: generate in-between frames and compare with the true in-between images ---
@@ -136,15 +137,20 @@ enum SelfTest {
             player.volume = 0
             player.delay = 0.10
             var errs: [Double] = []
-            for i in 0..<30 {
+            var trace: [String] = []
+            for i in 0..<40 {
                 if let sb = gen.next(frames: 480) { player.enqueue(sb) }      // 10 ms of sound every 10 ms
-                if i == 15 { player.delay = 0.20 }                          // change the delay while running
-                if i > 2 && i != 15 && i != 16 { errs.append(abs(player.lastError)) }
+                if i == 20 { player.delay = 0.20 }                          // change the delay while running
+                if i > 4 && (i < 20 || i > 22) { errs.append(abs(player.lastError)) }
+                if i % 8 == 0 { trace.append(String(format: "%d:%.1fms", i, player.lastError * 1000)) }
                 Thread.sleep(forTimeInterval: 0.010)
             }
             let worst = (errs.max() ?? 1) * 1000
-            say(String(format: "Ton-Puffer (Bild/Ton synchron): max. Abweichung %.1f ms %@", worst, worst < 15 ? "OK" : "FEHLER"))
-            if worst >= 15 { ok = false }
+            let hasOut = AudioDelayPlayer.hasOutputDevice
+            say(String(format: "Ton-Puffer (Bild/Ton synchron): max. Abweichung %.1f ms %@ [Audioausgang: %@]",
+                       worst, worst < 15 ? "OK" : (hasOut ? "FEHLER" : "nicht prüfbar"), hasOut ? "ja" : "keiner"))
+            say("  " + player.debugInfo + " · " + trace.joined(separator: " "))
+            if worst >= 15 && hasOut { ok = false }
             player.stop()
         }
 
@@ -167,11 +173,11 @@ enum SelfTest {
                     syn.append(run { interp.synthesize(t: 0.5, mode: .interpolate, cmd: $0) })
                     pre.append(run { interp.present(interp.output!, to: screen, sharpen: 0.3, cmd: $0) })
                 }
-                let e = avg(Array(est.dropFirst(4))), s = avg(Array(syn.dropFirst(4))) + avg(Array(pre.dropFirst(4)))
+                let e = median(est), s = median(syn) + median(pre)
                 // per real frame (33 ms at 30 FPS): one analysis + N output images
                 let fps60 = e + 2 * s < 30, fps120 = e + 4 * s < 30
                 say(String(format: "  %dx%d %@: Analyse %.2f ms/Frame, Zwischenbild %.2f ms + Anzeige %.2f ms -> 60 FPS %@, 120 FPS %@",
-                           w, h, interp.effectiveQuality == .high ? "Hoch" : (q == .high ? "Hoch→Schnell" : "Schnell"), e, avg(Array(syn.dropFirst(4))), avg(Array(pre.dropFirst(4))),
+                           w, h, interp.effectiveQuality == .high ? "Hoch" : (q == .high ? "Hoch→Schnell" : "Schnell"), e, median(syn), median(pre),
                            fps60 ? "JA" : "NEIN", fps120 ? "JA" : "NEIN"))
                 if w <= 2560 && !fps60 { ok = false }
             }

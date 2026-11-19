@@ -54,12 +54,19 @@ codesign --verify --strict --verbose=2 "$APP"
 "$BIN" --make-dmg-background build/dmg-bg@2x.png 2
 tiffutil -cathidpicheck build/dmg-bg.png build/dmg-bg@2x.png -out build/dmg-bg.tiff
 
-python3 -m venv build/venv >/dev/null
-build/venv/bin/pip install --quiet "dmgbuild==1.6.5"
 rm -f build/FrameBoost.dmg
-build/venv/bin/dmgbuild -s scripts/dmg_settings.py \
-  -D app="$APP" -D background=build/dmg-bg.tiff -D volicon="$APP/Contents/Resources/AppIcon.icns" \
-  "FrameBoost" build/FrameBoost.dmg
+STAGE=build/dmg && rm -rf "$STAGE" && mkdir -p "$STAGE" && cp -R "$APP" "$STAGE/"
+if command -v create-dmg >/dev/null; then
+  # Finder lays out the window itself (background, icon positions, drag target)
+  create-dmg --volname "FrameBoost" --volicon "$APP/Contents/Resources/AppIcon.icns" \
+    --background build/dmg-bg.tiff --window-pos 200 140 --window-size 660 420 \
+    --icon-size 112 --text-size 13 --icon "FrameBoost.app" 165 200 --hide-extension "FrameBoost.app" \
+    --app-drop-link 495 200 --no-internet-enable \
+    build/FrameBoost.dmg "$STAGE"
+else
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "FrameBoost" -srcfolder "$STAGE" -ov -format UDZO build/FrameBoost.dmg
+fi
 
 # ---------------------------------------------------------------- notarization
 if [ -n "${SIGN_IDENTITY:-}" ]; then

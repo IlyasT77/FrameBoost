@@ -252,10 +252,10 @@ enum IconMaker {
 }
 
 /// Background picture of the installer window (FrameBoost  ──▶  Programme).
-/// Finder positions: app icon at (165, 200), Applications at (495, 200) in a 660x400 window.
+/// Finder positions: app icon at (165, 200), Applications at (495, 200); picture is 660x440 so it always fills the window.
 enum DMGBackground {
     static func write(to path: String, scale: Int) {
-        let W = 660, H = 400, s = CGFloat(scale)
+        let W = 660, H = 440, s = CGFloat(scale)
         let ctx = CGContext(data: nil, width: W * scale, height: H * scale, bitsPerComponent: 8, bytesPerRow: 0,
                             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         ctx.scaleBy(x: s, y: s)
@@ -290,8 +290,8 @@ enum DMGBackground {
         }
         text("FrameBoost", 30, .heavy, NSColor(red: 1, green: 0.4, blue: 0.65, alpha: 1), y: CGFloat(H) - 62)
         text("PS5 Frame Generation · 30 → 60 / 120 FPS", 13, .medium, NSColor(white: 0.75, alpha: 1), y: CGFloat(H) - 84)
-        text("Zum Installieren FrameBoost auf „Programme“ ziehen", 15, .semibold, .white, y: 78)
-        text("Erster Start: Rechtsklick auf FrameBoost → Öffnen", 12, .regular, NSColor(white: 0.65, alpha: 1), y: 52)
+        text("Zum Installieren FrameBoost auf „Programme“ ziehen", 15, .semibold, .white, y: CGFloat(H) - 318)
+        text("Erster Start: Rechtsklick auf FrameBoost → Öffnen", 12, .regular, NSColor(white: 0.65, alpha: 1), y: CGFloat(H) - 344)
         NSGraphicsContext.restoreGraphicsState()
         if let img = ctx.makeImage() { SelfTest.save(img, to: path) }
     }

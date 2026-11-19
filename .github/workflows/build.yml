@@ -27,6 +27,8 @@ jobs:
           ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
           echo "SIGN_IDENTITY=$ID" >> $GITHUB_ENV
           rm $RUNNER_TEMP/cert.p12
+      - name: Install create-dmg
+        run: brew install create-dmg
       - name: Build app + DMG
         env:
           VERSION: "2.1.0"

@@ -9,9 +9,30 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      # Optional: Apple Developer ID signing + notarization (only runs when the secrets exist, see SIGNIEREN.md)
+      - name: Import signing certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        if: env.MACOS_CERT_P12 != ''
+        run: |
+          KC=$RUNNER_TEMP/sign.keychain-db
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p ci "$KC"
+          echo "$MACOS_CERT_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -k "$KC" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "SIGN_IDENTITY=$ID" >> $GITHUB_ENV
+          rm $RUNNER_TEMP/cert.p12
       - name: Build app + DMG
         env:
-          VERSION: "2.0.0"
+          VERSION: "2.1.0"
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
         run: ./scripts/build_dmg.sh
       - name: Self test (real GPU pipeline)
         run: |
@@ -34,6 +55,18 @@ jobs:
           sleep 8
           screencapture -x ci-output/app_screenshot.png || true
           kill $PID || true
+      - name: Installer window screenshot
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p ci-output
+          hdiutil attach build/FrameBoost.dmg -noautoopen
+          open /Volumes/FrameBoost
+          sleep 5
+          osascript -e 'tell application "Finder" to activate' || true
+          sleep 2
+          screencapture -x ci-output/dmg_installer.png || true
+          hdiutil detach /Volumes/FrameBoost -force || true
       - name: Publish results to ci-output branch
         if: always()
         run: |

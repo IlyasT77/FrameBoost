@@ -250,3 +250,49 @@ enum IconMaker {
         if let img = ctx.makeImage() { SelfTest.save(img, to: path) }
     }
 }
+
+/// Background picture of the installer window (FrameBoost  ──▶  Programme).
+/// Finder positions: app icon at (165, 200), Applications at (495, 200) in a 660x400 window.
+enum DMGBackground {
+    static func write(to path: String, scale: Int) {
+        let W = 660, H = 400, s = CGFloat(scale)
+        let ctx = CGContext(data: nil, width: W * scale, height: H * scale, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.scaleBy(x: s, y: s)
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)
+        // dark gaming gradient
+        let bg = CGGradient(colorsSpace: sRGB, colors: [CGColor(red: 0.16, green: 0.08, blue: 0.27, alpha: 1),
+                                                        CGColor(red: 0.05, green: 0.06, blue: 0.09, alpha: 1)] as CFArray, locations: [0, 1])!
+        ctx.drawLinearGradient(bg, start: CGPoint(x: 0, y: CGFloat(H)), end: CGPoint(x: 0, y: 0), options: [])
+        // soft glows behind the two icons (CG y is bottom-up: Finder y 200 -> 200)
+        let iconY: CGFloat = CGFloat(H) - 200
+        func glow(_ x: CGFloat, _ c: CGColor) {
+            let g = CGGradient(colorsSpace: sRGB, colors: [c, c.copy(alpha: 0)!] as CFArray, locations: [0, 1])!
+            ctx.drawRadialGradient(g, startCenter: CGPoint(x: x, y: iconY), startRadius: 0, endCenter: CGPoint(x: x, y: iconY), endRadius: 120, options: [])
+        }
+        glow(165, CGColor(red: 1, green: 0.25, blue: 0.55, alpha: 0.45))
+        glow(495, CGColor(red: 0.45, green: 0.35, blue: 1, alpha: 0.35))
+        // arrow
+        ctx.setLineCap(.round)
+        ctx.setLineWidth(9)
+        ctx.setStrokeColor(CGColor(red: 1, green: 0.35, blue: 0.6, alpha: 0.95))
+        ctx.move(to: CGPoint(x: 258, y: iconY)); ctx.addLine(to: CGPoint(x: 392, y: iconY)); ctx.strokePath()
+        ctx.setFillColor(CGColor(red: 1, green: 0.35, blue: 0.6, alpha: 0.95))
+        ctx.move(to: CGPoint(x: 410, y: iconY)); ctx.addLine(to: CGPoint(x: 382, y: iconY + 20)); ctx.addLine(to: CGPoint(x: 382, y: iconY - 20))
+        ctx.closePath(); ctx.fillPath()
+        // texts
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        func text(_ str: String, _ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor, y: CGFloat) {
+            let p = NSMutableParagraphStyle(); p.alignment = .center
+            let a: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color, .paragraphStyle: p]
+            (str as NSString).draw(in: NSRect(x: 0, y: y, width: CGFloat(W), height: size * 1.5), withAttributes: a)
+        }
+        text("FrameBoost", 30, .heavy, NSColor(red: 1, green: 0.4, blue: 0.65, alpha: 1), y: CGFloat(H) - 62)
+        text("PS5 Frame Generation · 30 → 60 / 120 FPS", 13, .medium, NSColor(white: 0.75, alpha: 1), y: CGFloat(H) - 84)
+        text("Zum Installieren FrameBoost auf „Programme“ ziehen", 15, .semibold, .white, y: 78)
+        text("Erster Start: Rechtsklick auf FrameBoost → Öffnen", 12, .regular, NSColor(white: 0.65, alpha: 1), y: 52)
+        NSGraphicsContext.restoreGraphicsState()
+        if let img = ctx.makeImage() { SelfTest.save(img, to: path) }
+    }
+}

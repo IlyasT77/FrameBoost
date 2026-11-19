@@ -38,29 +38,37 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
-codesign --verify --verbose "$APP"
+# ---------------------------------------------------------------- signing
+# With an Apple "Developer ID Application" certificate (SIGN_IDENTITY set, see SIGNIEREN.md) the app is
+# signed with hardened runtime and later notarized -> opens without any warning.
+# Without it: ad-hoc signature (first start: right click -> Open).
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  codesign --force --options runtime --timestamp --entitlements scripts/entitlements.plist --sign "$SIGN_IDENTITY" "$APP"
+else
+  codesign --force --deep --sign - "$APP"
+fi
+codesign --verify --strict --verbose=2 "$APP"
 
-# DMG with drag-to-Applications
-STAGE=build/dmg && mkdir -p "$STAGE"
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
-cat > "$STAGE/ZUERST LESEN.txt" <<TXT
-FrameBoost installieren:
-1. FrameBoost in den Ordner "Programme" (Applications) ziehen.
-2. Beim ersten Start: Rechtsklick auf FrameBoost -> "Öffnen" -> "Öffnen".
-   (Die App ist nicht bei Apple notarisiert. Falls "beschädigt" erscheint:
-    Terminal öffnen und eingeben:  xattr -cr /Applications/FrameBoost.app )
-3. Kamera- und Mikrofon-Zugriff erlauben (das ist die Capture Card).
+# ---------------------------------------------------------------- installer window
+"$BIN" --make-dmg-background build/dmg-bg.png 1
+"$BIN" --make-dmg-background build/dmg-bg@2x.png 2
+tiffutil -cathidpicheck build/dmg-bg.png build/dmg-bg@2x.png -out build/dmg-bg.tiff
 
-PS5 vorbereiten:
-- Einstellungen -> System -> HDMI -> "HDCP aktivieren" AUS (sonst schwarzes Bild).
-- OBS, QuickTime oder Elgato-Software schließen (sonst ist die Karte belegt).
-
-Bedienung: Karte wird automatisch erkannt und gestartet.
-Frame Gen "Auto" = so viele FPS wie dein Bildschirm kann (60 Hz -> 60, ProMotion -> 120).
-Vollbild: Ctrl+Cmd+F.  Cmd+0 Aus, Cmd+1 Auto, Cmd+2 2x, Cmd+4 4x.
-TXT
+python3 -m venv build/venv >/dev/null
+build/venv/bin/pip install --quiet "dmgbuild==1.6.5"
 rm -f build/FrameBoost.dmg
-hdiutil create -volname "FrameBoost" -srcfolder "$STAGE" -ov -format UDZO build/FrameBoost.dmg
+build/venv/bin/dmgbuild -s scripts/dmg_settings.py \
+  -D app="$APP" -D background=build/dmg-bg.tiff -D volicon="$APP/Contents/Resources/AppIcon.icns" \
+  "FrameBoost" build/FrameBoost.dmg
+
+# ---------------------------------------------------------------- notarization
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" build/FrameBoost.dmg
+  if [ -n "${NOTARY_APPLE_ID:-}" ]; then
+    xcrun notarytool submit build/FrameBoost.dmg --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" \
+      --password "$NOTARY_PASSWORD" --wait
+    xcrun stapler staple build/FrameBoost.dmg
+    spctl -a -t open --context context:primary-signature -v build/FrameBoost.dmg
+  fi
+fi
 echo "DMG: build/FrameBoost.dmg"

@@ -23,6 +23,9 @@ struct FrameBoostApp: App {
         if let i = args.firstIndex(of: "--make-icon"), i + 1 < args.count {
             IconMaker.write(to: args[i + 1]); exit(0)
         }
+        if let i = args.firstIndex(of: "--make-dmg-background"), i + 2 < args.count {
+            DMGBackground.write(to: args[i + 1], scale: Int(args[i + 2]) ?? 1); exit(0)
+        }
     }
 
     var body: some Scene {

@@ -133,32 +133,56 @@ enum SelfTest {
             if !dupOK { ok = false }
         }
 
-        // --- Sound buffer: sound must be played exactly `delay` after it arrived ---
+        // --- Sound buffer: simulated capture card (10 ms chunks) + sound output (512-frame callbacks,
+        //     clock 0.1 % faster), delay 60 ms then 120 ms. Every sample carries its own number, so the
+        //     exact delay of each sample is measured.
         do {
+            let rate = 48000.0, C = 480, F = 512
+            var line = DelayLine(channels: 2, capacity: 96000)
+            line.tolerance = max(Int(0.02 * rate), 1536)
+            line.target = Int(0.06 * rate)
+            var arrival: [Double] = []
+            var events: [(Double, Int)] = []           // (time, 0 = write chunk / 1 = read callback)
+            var k = 0; while Double(k + 1) * Double(C) / rate < 3 { events.append((Double(k + 1) * Double(C) / rate + Double(k % 3) * 0.001, 0)); k += 1 }
+            var m = 0; while Double(m) * Double(F) / rate * 0.999 < 3 { events.append((Double(m) * Double(F) / rate * 0.999, 1)); m += 1 }
+            events.sort { $0.0 < $1.0 }
+            var lat60: [Double] = [], lat120: [Double] = []
+            var written = 0
+            let l = UnsafeMutablePointer<Float>.allocate(capacity: F), r = UnsafeMutablePointer<Float>.allocate(capacity: F)
+            for (tm, kind) in events {
+                if tm > 1.0 { line.target = Int(0.12 * rate) }
+                if kind == 0 {
+                    var chunk = [Float](repeating: 0, count: C * 2)
+                    for j in 0..<C { chunk[2 * j] = Float(written + j + 1); chunk[2 * j + 1] = chunk[2 * j]; arrival.append(tm) }
+                    chunk.withUnsafeBufferPointer { line.write($0.baseAddress!, frames: C) }
+                    written += C
+                } else {
+                    line.read(frames: F, into: [l, r])
+                    for i in 0..<F where l[i] > 0 {
+                        let d = tm + Double(i) / rate - arrival[Int(l[i]) - 1]
+                        if tm > 0.3 && tm < 1.0 { lat60.append(d) } else if tm > 1.3 { lat120.append(d) }
+                    }
+                }
+            }
+            l.deallocate(); r.deallocate()
+            let m60 = avg(lat60) * 1000, m120 = avg(lat120) * 1000
+            let spread = max((lat60.max() ?? 0) - (lat60.min() ?? 0), (lat120.max() ?? 0) - (lat120.min() ?? 0)) * 1000
+            let good = abs(m60 - 60) < 10 && abs(m120 - 120) < 10 && spread < 30
+            say(String(format: "Ton-Puffer (Bild/Ton synchron): Ziel 60 ms -> %.1f ms, Ziel 120 ms -> %.1f ms, Schwankung %.1f ms %@",
+                       m60, m120, spread, good ? "OK" : "FEHLER"))
+            if !good { ok = false }
+
+            // real sound output: start, play 0.4 s of (silent) sound in real time
             let player = AudioDelayPlayer()
             let gen = SyntheticAudio()
             player.volume = 0
-            player.delay = 0.10
-            var errs: [Double] = []
-            var trace: [String] = []
+            player.delay = 0.08
             let t0 = CACurrentMediaTime()
-            var i = 0
-            while CACurrentMediaTime() - t0 < 0.8 {             // 0.8 s of sound, delivered in real time like a capture card
+            while CACurrentMediaTime() - t0 < 0.4 {
                 if let sb = gen.nextRealtime() { player.enqueue(sb) }
-                let el = CACurrentMediaTime() - t0
-                if i == 0 { trace.append("start") }
-                if el > 0.4 && player.delay < 0.15 { player.delay = 0.20; trace.append("delay->200ms") }
-                if el > 0.08 && !(el > 0.4 && el < 0.48) { errs.append(abs(player.lastError)) }
-                if i % 10 == 0 { trace.append(String(format: "%.0fms:%.1f(r%d)", el * 1000, player.lastError * 1000, player.retimeCount)) }
-                i += 1
-                Thread.sleep(forTimeInterval: 0.008)
+                Thread.sleep(forTimeInterval: 0.01)
             }
-            let worst = (errs.max() ?? 1) * 1000
-            let hasOut = AudioDelayPlayer.hasOutputDevice
-            say(String(format: "Ton-Puffer (Bild/Ton synchron): max. Abweichung %.1f ms %@ [Audioausgang: %@, Korrekturen: %d]",
-                       worst, worst < 15 ? "OK" : (hasOut ? "FEHLER" : "nicht prüfbar"), hasOut ? "ja" : "keiner", player.retimeCount))
-            say("  " + player.debugInfo + " · " + trace.joined(separator: " "))
-            if worst >= 15 && hasOut { ok = false }
+            say("  Audio-Ausgabe: " + (player.failed ? "FEHLER" : "OK") + " · " + player.debugInfo)
             player.stop()
         }
 

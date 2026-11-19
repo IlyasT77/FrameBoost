@@ -2,121 +2,189 @@ import AVFoundation
 import CoreMedia
 import QuartzCore
 import CoreAudio
+import os
 
-/// Plays the capture card's sound through a buffer, delayed by exactly as long as the picture needs
-/// (frame generation holds back one real frame + GPU + display). Picture and sound stay in sync.
-///
-/// Timing: buffer with timestamp P arriving at host time A is heard at A + delay. The renderer itself
-/// compensates the output device latency (speakers, headphones); Bluetooth latency above `delay` cannot
-/// be compensated (shown as a hint in the settings). Right after (re)timing, the synchronizer's reading is taken as baseline; only when the clocks
-/// drift apart by more than 20 ms is it re-timed. Re-timing never runs on the main thread.
-final class AudioDelayPlayer {
-    private let renderer = AVSampleBufferAudioRenderer()
-    private let sync = AVSampleBufferRenderSynchronizer()
-    private let ctl = DispatchQueue(label: "audio.delay.ctl", qos: .userInteractive)
-    private let lock = NSLock()
-    private var anchored = false
-    private var pending = false
-    private var baseline: Double?
-    private var lastPTS = CMTime.invalid
-    private var lastArrival: CFTimeInterval = 0
-    private var _delay: Double = 0.06
-    private(set) var outputLatency: Double = 0
-    private(set) var failed = false
-    private(set) var retimeCount = 0
-    /// drift since the last timing in seconds (diagnostics)
-    private(set) var lastError: Double = 0
+/// Ring buffer that keeps a fixed amount of sound "in flight" (= the delay).
+/// Too much in the buffer (clock drift, delay lowered) -> skip ahead; too little -> hold (insert
+/// silence) until the target is reached again. Pure logic, also used by the self test.
+struct DelayLine {
+    let channels: Int
+    let capacity: Int
+    private var buf: [Float]
+    private(set) var writePos: Int64 = 0
+    private(set) var readPos: Int64 = 0
+    private var primed = false
+    private var filling = false
+    var target = 0          // frames
+    var tolerance = 960     // frames
+    private(set) var skips = 0, holds = 0
 
-    private var flushObserver: NSObjectProtocol?
-    private(set) var autoFlushes = 0
+    init(channels: Int, capacity: Int) {
+        self.channels = channels; self.capacity = capacity
+        buf = [Float](repeating: 0, count: channels * capacity)
+    }
 
-    init() {
-        sync.addRenderer(renderer)
-        sync.delaysRateChangeUntilHasSufficientMediaData = false   // our timing must apply immediately
-        // macOS flushes the renderer when the output device changes (e.g. headphones plugged in): re-time
-        flushObserver = NotificationCenter.default.addObserver(forName: .AVSampleBufferAudioRendererWasFlushedAutomatically,
-                                                               object: renderer, queue: nil) { [weak self] _ in
-            guard let self = self else { return }
-            self.autoFlushes += 1
-            self.lock.lock(); let pts = self.lastPTS, arr = self.lastArrival, go = self.anchored && pts.isValid && !self.pending
-            if go { self.pending = true }
-            self.lock.unlock()
-            if go { self.ctl.async { self.retime(pts: pts, arrival: arr) } }
+    var available: Int { Int(writePos - readPos) }
+
+    /// interleaved input
+    mutating func write(_ p: UnsafePointer<Float>, frames: Int) {
+        for i in 0..<frames {
+            let idx = Int((writePos + Int64(i)) % Int64(capacity)) * channels
+            for c in 0..<channels { buf[idx + c] = p[i * channels + c] }
+        }
+        writePos += Int64(frames)
+        if writePos - readPos > Int64(capacity) { readPos = writePos - Int64(capacity) }
+    }
+
+    /// fills `frames` frames into per-channel outputs
+    mutating func read(frames: Int, into out: [UnsafeMutablePointer<Float>]) {
+        for o in out { o.update(repeating: 0, count: frames) }
+        var avail = available
+        if !primed {
+            guard avail >= target else { return }
+            primed = true
+        }
+        if avail > target + tolerance { readPos += Int64(avail - target); avail = target; skips += 1 }
+        if avail < target - tolerance { filling = true; holds += 1 }
+        var hold = 0
+        if filling {
+            hold = min(frames, max(0, target - avail))
+            if hold < frames { filling = false }
+        }
+        for i in hold..<frames {
+            guard readPos < writePos else { break }
+            let idx = Int(readPos % Int64(capacity)) * channels
+            for (c, o) in out.enumerated() { o[i] = buf[idx + min(c, channels - 1)] }
+            readPos += 1
         }
     }
 
+    mutating func reset() { writePos = 0; readPos = 0; primed = false; filling = false }
+}
+
+/// Plays the capture card's sound delayed by exactly as long as the picture needs
+/// (frame generation holds back one real frame + GPU + display): picture and sound in sync.
+/// delay = sound in the ring buffer + latency of the output device (speakers / headphones).
+final class AudioDelayPlayer {
+    private var engine: AVAudioEngine?
+    private var line = DelayLine(channels: 2, capacity: 48000 * 2)
+    private let lk = OSAllocatedUnfairLock()
+    private var rate: Double = 48000
+    private var _delay: Double = 0.06
+    private var _volume: Float = 1
+    private var configObserver: NSObjectProtocol?
+    private(set) var outputLatency: Double = 0
+    private(set) var failed = false
+    private(set) var running = false
+
     var volume: Float {
-        get { renderer.volume }
-        set { renderer.volume = newValue }
+        get { _volume }
+        set { _volume = newValue; engine?.mainMixerNode.outputVolume = newValue }
     }
 
     /// Seconds between "sound arrives" and "sound is heard".
     var delay: Double {
-        get { lock.lock(); defer { lock.unlock() }; return _delay }
+        get { lk.lock(); defer { lk.unlock() }; return _delay }
         set {
-            lock.lock()
-            let v = max(0, min(newValue, 0.5))
-            let changed = abs(v - _delay) > 0.008
-            _delay = v
-            let pts = lastPTS, arr = lastArrival, go = changed && anchored && pts.isValid && !pending
-            if go { pending = true }
-            lock.unlock()
-            if go { ctl.async { self.retime(pts: pts, arrival: arr) } }
+            lk.lock()
+            _delay = max(0, min(newValue, 0.5))
+            applyTarget()
+            lk.unlock()
         }
     }
 
-    private var bufferDelay: Double { delay }
+    /// call with lock held
+    private func applyTarget() {
+        line.target = Int(max(0, _delay - outputLatency) * rate)
+        line.tolerance = max(Int(0.02 * rate), 1536)
+    }
 
-    func enqueue(_ sb: CMSampleBuffer, arrival: CFTimeInterval = CACurrentMediaTime()) {
-        let pts = CMSampleBufferGetPresentationTimeStamp(sb)
-        guard pts.isValid else { return }
-        lock.lock()
-        let first = !anchored
-        anchored = true
-        lastPTS = pts; lastArrival = arrival
-        let base = baseline, isPending = pending
-        lock.unlock()
-
-        if first {
-            outputLatency = AudioDelayPlayer.defaultOutputLatency()
-            retime(pts: pts, arrival: arrival)
-        } else if let base = base, !isPending {
-            let err = offset(pts: pts, arrival: arrival) - base
-            lastError = err
-            if abs(err) > 0.02 {
-                lock.lock(); pending = true; lock.unlock()
-                ctl.async { self.retime(pts: pts, arrival: arrival) }
-            }
+    private func startEngine(sampleRate: Double) {
+        let e = AVAudioEngine()
+        guard let fmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else { failed = true; return }
+        let src = AVAudioSourceNode(format: fmt) { [weak self] _, _, frameCount, abl -> OSStatus in
+            guard let self = self else { return noErr }
+            let list = UnsafeMutableAudioBufferListPointer(abl)
+            var outs: [UnsafeMutablePointer<Float>] = []
+            for b in list { if let d = b.mData { outs.append(d.assumingMemoryBound(to: Float.self)) } }
+            self.lk.lock()
+            self.line.read(frames: Int(frameCount), into: outs)
+            self.lk.unlock()
+            return noErr
         }
-        if renderer.status == .failed { failed = true; return }
-        if renderer.isReadyForMoreMediaData { renderer.enqueue(sb) }
+        e.attach(src)
+        e.connect(src, to: e.mainMixerNode, format: fmt)
+        e.mainMixerNode.outputVolume = _volume
+        do {
+            e.prepare()
+            try e.start()
+        } catch { failed = true; return }
+        engine = e
+        rate = sampleRate
+        outputLatency = AudioDelayPlayer.defaultOutputLatency()
+        lk.lock(); line.reset(); applyTarget(); lk.unlock()
+        running = true
+        // output device changed (headphones, AirPods...): restart with the new latency
+        configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: e, queue: .main) { [weak self] _ in
+            guard let self = self, let e = self.engine else { return }
+            self.outputLatency = AudioDelayPlayer.defaultOutputLatency()
+            self.lk.lock(); self.line.reset(); self.applyTarget(); self.lk.unlock()
+            try? e.start()
+        }
     }
 
-    /// synchronizer time minus the media time that should be playing right now
-    private func offset(pts: CMTime, arrival: CFTimeInterval) -> Double {
-        let expected = pts.seconds - bufferDelay + (CACurrentMediaTime() - arrival)
-        return sync.currentTime().seconds - expected
-    }
-
-    /// Media time `pts` shall be heard at host time `arrival + delay`. The timebase is set *now*
-    /// (to the media time that belongs to this moment) so it keeps running continuously.
-    private func retime(pts: CMTime, arrival: CFTimeInterval) {
-        let now = CACurrentMediaTime()
-        let mediaNow = CMTimeAdd(pts, CMTime(seconds: (now - arrival) - bufferDelay, preferredTimescale: 1_000_000_000))
-        sync.setRate(1.0, time: mediaNow, atHostTime: CMClockGetTime(CMClockGetHostTimeClock()))
-        if sync.rate == 0 { sync.rate = 1 }
-        let b = offset(pts: pts, arrival: arrival)
-        lock.lock(); baseline = b; pending = false; retimeCount += 1; lock.unlock()
+    /// Accepts LPCM sample buffers (float32 or int16, mono or stereo, interleaved or not).
+    func enqueue(_ sb: CMSampleBuffer) {
+        guard let fd = CMSampleBufferGetFormatDescription(sb),
+              let asbdPtr = CMAudioFormatDescriptionGetStreamBasicDescription(fd) else { return }
+        let asbd = asbdPtr.pointee
+        guard asbd.mFormatID == kAudioFormatLinearPCM else { return }
+        if !running || abs(asbd.mSampleRate - rate) > 1 {
+            stop()
+            startEngine(sampleRate: asbd.mSampleRate)
+            if failed { return }
+        }
+        let frames = CMSampleBufferGetNumSamples(sb)
+        guard frames > 0 else { return }
+        var blockBuffer: CMBlockBuffer?
+        var ablSize = 0
+        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sb, bufferListSizeNeededOut: &ablSize, bufferListOut: nil, bufferListSize: 0,
+                                                                blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: 0, blockBufferOut: nil)
+        let ablMem = UnsafeMutableRawPointer.allocate(byteCount: ablSize, alignment: 16)
+        defer { ablMem.deallocate() }
+        let ablPtr = ablMem.bindMemory(to: AudioBufferList.self, capacity: 1)
+        guard CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sb, bufferListSizeNeededOut: nil, bufferListOut: ablPtr, bufferListSize: ablSize,
+                                                                      blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
+                                                                      flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+                                                                      blockBufferOut: &blockBuffer) == noErr else { return }
+        let list = UnsafeMutableAudioBufferListPointer(ablPtr)
+        let isFloat = asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0
+        let nonInterleaved = asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved != 0
+        let ch = Int(asbd.mChannelsPerFrame)
+        guard ch > 0, (isFloat && asbd.mBitsPerChannel == 32) || (!isFloat && asbd.mBitsPerChannel == 16) else { return }
+        // -> interleaved stereo float
+        var stereo = [Float](repeating: 0, count: frames * 2)
+        func sample(_ frame: Int, _ c: Int) -> Float {
+            let cc = min(c, ch - 1)
+            let b = nonInterleaved ? list[cc] : list[0]
+            let idx = nonInterleaved ? frame : frame * ch + cc
+            guard let d = b.mData else { return 0 }
+            return isFloat ? d.assumingMemoryBound(to: Float.self)[idx] : Float(d.assumingMemoryBound(to: Int16.self)[idx]) / 32768
+        }
+        for f in 0..<frames { stereo[2 * f] = sample(f, 0); stereo[2 * f + 1] = sample(f, 1) }
+        lk.lock()
+        stereo.withUnsafeBufferPointer { line.write($0.baseAddress!, frames: frames) }
+        lk.unlock()
     }
 
     var debugInfo: String {
-        let st: String
-        switch renderer.status { case .rendering: st = "rendering"; case .failed: st = "failed"; default: st = "unknown" }
-        return String(format: "status=%@ err=%@ rate=%.2f baseline=%.1fms outLatency=%.1fms autoFlush=%d", st, renderer.error?.localizedDescription ?? "-",
-                      sync.rate, (baseline ?? 0) * 1000, outputLatency * 1000, autoFlushes)
+        lk.lock(); defer { lk.unlock() }
+        return String(format: "engine=%@ rate=%.0f buffered=%.1fms target=%.1fms outLatency=%.1fms skips=%d holds=%d",
+                      running ? "an" : "aus", rate, Double(line.available) / rate * 1000, Double(line.target) / rate * 1000,
+                      outputLatency * 1000, line.skips, line.holds)
     }
 
-    /// true if macOS has a sound output device (test servers often have none)
+    /// true if macOS has a sound output device
     static var hasOutputDevice: Bool { defaultOutputDevice() != nil }
 
     private static func defaultOutputDevice() -> AudioObjectID? {
@@ -143,7 +211,6 @@ final class AudioDelayPlayer {
         var frames = u32(dev, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeOutput)
             + u32(dev, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeOutput)
             + u32(dev, kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeOutput)
-        // first output stream's latency
         var ssize: UInt32 = 0
         var saddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeOutput,
                                                mElement: kAudioObjectPropertyElementMain)
@@ -157,9 +224,9 @@ final class AudioDelayPlayer {
     }
 
     func stop() {
-        sync.setRate(0, time: .zero)
-        renderer.flush()
-        lock.lock(); anchored = false; pending = false; baseline = nil; lastPTS = .invalid; lock.unlock()
+        if let o = configObserver { NotificationCenter.default.removeObserver(o); configObserver = nil }
+        engine?.stop(); engine = nil; running = false
+        lk.lock(); line.reset(); lk.unlock()
     }
 }
 

@@ -57,16 +57,16 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var measuredPresented: [Double] = []
     private var measuredDrawn: [Double] = []
     private var measuredMedia: [Double] = []
-    private var measuredAllDraws: [(time: Double, media: Double)] = []
+    private var measuredAllDraws: [(time: Double, media: Double, slot: Int)] = []
     /// per-event trace for the video test (main thread only): D = refresh, A = analysis of a new real frame
     private var trace: [String] = []
     func takeTrace() -> [String] { let t = trace; trace = []; return t }
 
     func beginMeasure() {
         statLock.lock(); measuredPresented = []; measuredDrawn = []; measuredMedia = []; measuredAllDraws = []; measuring = true; statLock.unlock()
-        trace = ["typ;jetzt_ms;outClock_ms;A_ms;B_ms;t;paar_neu;quelle_ms;seq"]
+        trace = ["typ;jetzt_ms;outClock_ms;A_ms;B_ms;t;paar_neu;quelle_ms_oder_slot;seq;raster"]
     }
-    func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double], allDraws: [(time: Double, media: Double)]) {
+    func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double], allDraws: [(time: Double, media: Double, slot: Int)]) {
         statLock.lock(); defer { statLock.unlock() }
         measuring = false
         return (measuredPresented.sorted(), measuredDrawn, measuredMedia, measuredAllDraws)
@@ -99,7 +99,7 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     func reset() {
         lastSeq = 0; timeB = 0; timeA = 0; outClock = 0; lastShown = (0, -1); pendingPair = nil
-        nextNeedsNewPair = true; gridOffset = 0.5; gridVec = (0, 0)
+        nextNeedsNewPair = true; gridOffset = 0.5; gridVec = (0, 0); slotAnchor = 0; slot = 0
         statLock.lock(); presentTimes.removeAll(); statLock.unlock()
         interp.reset()
     }
@@ -123,6 +123,12 @@ final class Renderer: NSObject, MTKViewDelegate {
     /// mean. Rounding is centred on it, so refresh timing jitter can never flip between two neighbouring images.
     private var gridOffset: Double = 0.5
     private var gridVec: (x: Double, y: Double) = (0, 0)
+    /// refresh slots: a grid of refresh periods that follows the phase of the draw calls. The number of refreshes
+    /// between two calls is the slot difference (0 = a second call within the same refresh, 2 = one was skipped),
+    /// robust against irregular call times (e.g. a call 7 ms after the previous one followed by one after 26 ms).
+    private var slotAnchor: CFTimeInterval = 0
+    private var slotPeriod: Double = 0
+    private var slot = 0
 
     /// how far the output clock stays behind the newest real frame, on top of one frame interval
     private func margin(_ dp: Double) -> Double { max(1.2 * dp, 0.012) }
@@ -200,24 +206,37 @@ final class Renderer: NSObject, MTKViewDelegate {
         let dp = nominalPeriod > 0 ? nominalPeriod : drawPeriod
         // vsync-locked output clock, one real frame (+ a little margin) behind the signal
         let target = now - interval - margin(dp)
+        var steps = 1
+        if slotAnchor == 0 || prevDraw == 0 || abs(dp - slotPeriod) > 1e-6 || now - prevDraw > 0.25 {
+            slotAnchor = now; slotPeriod = dp; slot = 0
+        } else {
+            let rel = (now - slotAnchor) / dp
+            let idx = Int(rel.rounded())
+            slotAnchor += (rel - Double(idx)) * dp * 0.05   // follow the phase of the calls slowly
+            steps = max(idx - slot, 0)
+            slot = max(idx, slot)
+        }
         if outClock == 0 || prevDraw == 0 {
             outClock = target
-        } else {
-            let steps = max(1, Int(((now - prevDraw) / dp).rounded()))
+        } else if steps > 0 {
             outClock += Double(steps) * dp
             let err = target - outClock
-            if abs(err) > 2.5 * dp { outClock = target } else { outClock += err * 0.03 }
+            // ahead of the target (too little margin for the next real frame): correct faster
+            if abs(err) > 2.5 * dp { outClock = target } else { outClock += err * (err < 0 ? 0.1 : 0.03) }
         }
         var t: Float = 1
         if mode != .off {
             var phase = (outClock - timeA) / max(timeB - timeA, 0.004)
-            if let m = mode.steps, interp.hasPair {
+            if let m = mode.steps, interp.hasPair, steps > 0 {
                 // track where the refreshes fall between grid points (circular mean) and centre the rounding on it
                 let x = phase * Double(m), f = x - x.rounded(.down)
                 gridVec = (gridVec.x * 0.97 + cos(2 * .pi * f) * 0.03, gridVec.y * 0.97 + sin(2 * .pi * f) * 0.03)
                 if hypot(gridVec.x, gridVec.y) > 0.5 {
+                    // continuous (unwrapped) so it never jumps by a whole image; kept within [-0.25, 1.25)
                     let o = atan2(gridVec.y, gridVec.x) / (2 * .pi)
-                    gridOffset = o < 0 ? o + 1 : o
+                    var c = o + (gridOffset - o).rounded()
+                    if c >= 1.25 { c -= 1 } else if c < -0.25 { c += 1 }
+                    gridOffset = c
                 } else {
                     gridOffset = 0.5   // refresh rate is no multiple of the frame rate: plain rounding down
                 }
@@ -243,9 +262,9 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
 
         if measuring && trace.count < 20000 {
-            trace.append(String(format: "D;%.3f;%.3f;%.3f;%.3f;%.3f;%d;;%llu", now * 1000, outClock * 1000, timeA * 1000, timeB * 1000, t, applied, lastSeq))
+            trace.append(String(format: "D;%.3f;%.3f;%.3f;%.3f;%.3f;%d;%d;%llu;%.3f", now * 1000, outClock * 1000, timeA * 1000, timeB * 1000, t, applied, slot, lastSeq, gridOffset))
         }
-        if measuring { statLock.lock(); measuredAllDraws.append((now, mode == .off ? timeB : timeA + Double(t) * (timeB - timeA))); statLock.unlock() }
+        if measuring { statLock.lock(); measuredAllDraws.append((now, mode == .off ? timeB : timeA + Double(t) * (timeB - timeA), slot)); statLock.unlock() }
         if lastShown.0 != lastSeq || abs(lastShown.1 - t) > 0.001 {
             lastShown = (lastSeq, t)
             statLock.lock()

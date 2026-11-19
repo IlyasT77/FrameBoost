@@ -45,16 +45,21 @@ final class VideoTest {
         var callGaps: [Double] = []
         for i in 1..<max(allDraws.count, 1) { callGaps.append((allDraws[i].time - allDraws[i - 1].time) * 1000) }
         let dpMs = 1000 / max(model.stats.displayHz, 1)
-        let missedCalls = callGaps.filter { $0 > dpMs * 1.5 }.count
-        // 2) FrameBoost's part: on every refresh call a NEW image whose video moment advanced by exactly the elapsed refreshes
-        var appOK = 0, newImg = 0
+        // 2) FrameBoost's part, per refresh: a NEW image whose video moment advanced by exactly the elapsed refreshes.
+        //    Refreshes are counted on the refresh-slot grid (a second call within the same refresh is no new refresh,
+        //    a gap of two refreshes counts as two).
+        var refreshes = 0, skipped = 0, doubleCalls = 0, appOK = 0, newImg = 0
         for i in 1..<max(allDraws.count, 1) {
-            let steps = max(1, Int((callGaps[i - 1] / dpMs).rounded()))
+            let n = allDraws[i].slot - allDraws[i - 1].slot
+            if n <= 0 { doubleCalls += 1; continue }
+            refreshes += 1
+            if n > 1 { skipped += 1 }
             let adv = (allDraws[i].media - allDraws[i - 1].media) * 1000
             if adv > 0.5 { newImg += 1 }
-            if abs(adv - Double(steps) * dpMs) <= 2.5 { appOK += 1 }
+            if abs(adv - Double(n) * dpMs) <= 2.5 { appOK += 1 }
         }
-        let calls = max(callGaps.count, 1)
+        let calls = max(refreshes, 1)
+        let missedCalls = skipped
         let appPct = 100 * Double(appOK) / Double(calls), newPct = 100 * Double(newImg) / Double(calls)
         let s = model.stats
         // prefer real on-screen times; fall back to draw times (virtual displays may not report them)
@@ -95,11 +100,11 @@ final class VideoTest {
                       stepMean, stepSd, even, repeats)
         rep += String(format: "Ton-Puffer: %.0f ms\n", s.audioDelayMs)
         rep += "--- getrennt nach Ursache ---\n"
-        rep += String(format: "Testrechner: %d Bild-Aufrufe des Systems, davon %d verspätet (> 1,5 Refreshes, 99%%: %.1f ms)\n",
-                      calls, missedCalls, VideoTest.percentile(callGaps, 0.99))
-        rep += String(format: "FrameBoost: bei %.1f %% der Aufrufe ein neues Bild, bei %.1f %% genau passend zur vergangenen Zeit\n", newPct, appPct)
+        rep += String(format: "Testrechner: %d Refreshes, davon %d mit ausgelassenem Aufruf; %d doppelte Aufrufe im selben Refresh (Abstand der Aufrufe 1%%: %.1f ms, 99%%: %.1f ms)\n",
+                      calls, missedCalls, doubleCalls, VideoTest.percentile(callGaps, 0.01), VideoTest.percentile(callGaps, 0.99))
+        rep += String(format: "FrameBoost: bei %.1f %% der Refreshes ein neues Bild, bei %.1f %% genau passend zur vergangenen Zeit\n", newPct, appPct)
         rep += locked ? (abs(fps - hz) < 1.5 && even >= 97 ? "ERGEBNIS: 60 FPS GELOCKT ✔\n"
-                                                           : "ERGEBNIS: FrameBoost GELOCKT ✔ (jeder Bild-Aufruf bekommt ein neues, zeitlich passendes Bild; die Aussetzer kommen vom Testrechner)\n")
+                                                           : "ERGEBNIS: FrameBoost GELOCKT ✔ (jeder Refresh bekommt ein neues, zeitlich passendes Bild; die Aussetzer kommen vom Testrechner)\n")
                        : "ERGEBNIS: NICHT GELOCKT\n"
         try? rep.write(toFile: dir + "/videotest-report.txt", atomically: true, encoding: .utf8)
         try? intervals.map { String(format: "%.3f", $0) }.joined(separator: "\n").write(toFile: dir + "/videotest-intervalle-ms.txt", atomically: true, encoding: .utf8)

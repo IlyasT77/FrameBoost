@@ -186,6 +186,71 @@ enum SelfTest {
             player.stop()
         }
 
+        // --- Regression tests: one check per fixed bug (see TESTBERICHT.md) ---
+        say("Regressionstests:")
+        #if arch(arm64)
+        say("  Architektur: arm64 – läuft nativ auf Apple Silicon (M1–M5)")
+        #else
+        say("  Architektur: x86_64 (Intel)")
+        #endif
+        say("  GPU: \(device.name) · Apple-GPU-Familie 7+: \(device.supportsFamily(.apple7) ? "ja" : "nein") · Metal 3: \(device.supportsFamily(.metal3) ? "ja" : "nein")")
+        do {   // Fehler 2 + 3: sound engine start/stop from two threads, no sound after Stop
+            let p = AudioDelayPlayer(); p.volume = 0
+            let gen = SyntheticAudio()
+            let g = DispatchGroup(); g.enter()
+            DispatchQueue(label: "rt.audio").async {
+                for _ in 0..<300 { if let sb = gen.next(frames: 480) { p.enqueue(sb) }; usleep(500) }
+                g.leave()
+            }
+            for _ in 0..<60 { p.begin(); usleep(1500); p.stop() }
+            g.wait()
+            p.stop()
+            if let sb = SyntheticAudio().next(frames: 480) { p.enqueue(sb) }
+            let good = !p.running
+            say("  [Fehler 2/3] Ton: 60× Start/Stop während Ton läuft, danach kein Ton: \(good ? "OK" : "FEHLER")")
+            if !good { ok = false }
+        }
+        do {   // Fehler 5: demo signal start/stop while its timer runs
+            let d = DemoSource(), st = FrameStore(), p = AudioDelayPlayer()
+            p.volume = 0
+            for _ in 0..<40 { p.begin(); d.start(store: st, audio: p); usleep(15_000); d.stop(); p.stop() }
+            say("  [Fehler 5] Demo-Signal: 40× Start/Stop im laufenden Betrieb: OK")
+        }
+        do {   // thread safety of the frame hand-off
+            let st = FrameStore()
+            let pa = demo.render(frame: 1)!, pb = demo.render(frame: 2)!
+            DispatchQueue.concurrentPerform(iterations: 8) { i in
+                for k in 0..<100 { if i % 2 == 0 { st.push(k % 2 == 0 ? pa : pb) } else { _ = st.take(after: 0); _ = st.gameFPS } }
+            }
+            say("  Bildspeicher: 800 gleichzeitige Zugriffe von 8 Threads: OK")
+        }
+        do {   // resolution change while running (e.g. PS5 switches 1080p -> 720p)
+            interp.quality = .high; interp.reset()
+            let big = outTex(1920, 1080)
+            _ = run { interp.present(texture(40), to: big, sharpen: 0, cmd: $0) }
+            _ = run { interp.ingest(texture(10), cmd: $0) }
+            _ = run { interp.ingest(big, cmd: $0) }
+            _ = run { interp.ingest(texture(11), cmd: $0) }
+            _ = run { interp.ingest(texture(12), cmd: $0) }
+            let o = outTex(W, H)
+            _ = run { interp.synthesize(t: 0.5, mode: .interpolate, into: o, cmd: $0) }
+            let good = interp.width == W && interp.height == H
+            say("  Auflösungswechsel 720p → 1080p → 720p im laufenden Betrieb: \(good ? "OK" : "FEHLER")")
+            if !good { ok = false }
+        }
+        do {   // sound buffer edge cases: overflow, delay larger than the buffer, zero delay
+            var line = DelayLine(channels: 2, capacity: 4800)
+            let big = [Float](repeating: 0.5, count: 20000)
+            big.withUnsafeBufferPointer { line.write($0.baseAddress!, frames: 10000) }
+            let l = UnsafeMutablePointer<Float>.allocate(capacity: 512), r = UnsafeMutablePointer<Float>.allocate(capacity: 512)
+            line.target = 0; line.read(frames: 512, into: [l, r])
+            line.target = 100_000; line.read(frames: 512, into: [l, r])
+            l.deallocate(); r.deallocate()
+            let good = line.available <= 4800
+            say("  Ton-Puffer Grenzfälle (Überlauf, 0 ms, zu große Verzögerung): \(good ? "OK" : "FEHLER")")
+            if !good { ok = false }
+        }
+
         // --- Speed ---
         say("Geschwindigkeit:")
         for (w, h) in [(1920, 1080), (2560, 1440), (3840, 2160)] {

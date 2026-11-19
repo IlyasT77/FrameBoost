@@ -4,6 +4,7 @@ import Metal
 
 final class AppModel: ObservableObject {
     static let demoID = "demo"
+    static let filePrefix = "file:"
     static let noAudioID = "none"
     private let defaults = UserDefaults.standard
 
@@ -34,6 +35,11 @@ final class AppModel: ObservableObject {
     let settings = RenderSettings()
     let capture = CaptureManager()
     let demo = DemoSource()
+    private(set) var videoFile: VideoFileSource?
+    /// a video file used as virtual capture card
+    var isFileSource: Bool { selectedVideo.hasPrefix(AppModel.filePrefix) }
+    /// sources that are not real devices (demo signal, video file)
+    var isVirtualSource: Bool { selectedVideo == AppModel.demoID || isFileSource }
     let audio = AudioDelayPlayer()
     let device: MTLDevice?
     let interp: Interpolator?
@@ -46,6 +52,7 @@ final class AppModel: ObservableObject {
 
     var sourceName: String {
         if selectedVideo == AppModel.demoID { return "Demo-Signal" }
+        if isFileSource { return "Video: " + URL(fileURLWithPath: String(selectedVideo.dropFirst(AppModel.filePrefix.count))).lastPathComponent }
         return videoDevices.first { $0.id == selectedVideo }?.name ?? "Keine Quelle"
     }
 
@@ -85,25 +92,25 @@ final class AppModel: ObservableObject {
         audioDevices = CaptureManager.audioItems()
         let remembered = defaults.string(forKey: "video")
         if let card = videoDevices.first(where: { $0.id == remembered }) ?? videoDevices.first(where: { $0.isCaptureCard }) {
-            if selectedVideo == AppModel.demoID || !videoDevices.contains(where: { $0.id == selectedVideo }) {
+            if !isFileSource && (selectedVideo == AppModel.demoID || !videoDevices.contains(where: { $0.id == selectedVideo })) {
                 selectedVideo = card.id
                 selectedAudio = CaptureManager.matchingAudio(forVideoName: card.name, in: audioDevices)?.id ?? AppModel.noAudioID
             }
             if autostart && !running && card.isCaptureCard { start() }
-        } else if selectedVideo != AppModel.demoID && !videoDevices.contains(where: { $0.id == selectedVideo }) {
+        } else if !isVirtualSource && !videoDevices.contains(where: { $0.id == selectedVideo }) {
             selectedVideo = AppModel.demoID
         }
     }
 
     private func devicesChanged() {
-        let wasRunningCard = running && selectedVideo != AppModel.demoID
+        let wasRunningCard = running && !isVirtualSource
         refreshDevices(autostart: !running)
         if wasRunningCard && !videoDevices.contains(where: { $0.id == selectedVideo }) { stop(); errorText = "Capture Card wurde getrennt." }
     }
 
     func selectVideo(_ id: String) {
         selectedVideo = id
-        if id != AppModel.demoID { defaults.set(id, forKey: "video") }
+        if id != AppModel.demoID && !id.hasPrefix(AppModel.filePrefix) { defaults.set(id, forKey: "video") }
         if let item = videoDevices.first(where: { $0.id == id }), let a = CaptureManager.matchingAudio(forVideoName: item.name, in: audioDevices) {
             selectedAudio = a.id
         }
@@ -112,7 +119,13 @@ final class AppModel: ObservableObject {
 
     func selectAudio(_ id: String) {
         selectedAudio = id
-        if running && selectedVideo != AppModel.demoID { start() }
+        if running && !isVirtualSource { start() }
+    }
+
+    /// Plays a video file like a capture card (testing without console / capture card).
+    func selectVideoFile(_ url: URL) {
+        selectVideo(AppModel.filePrefix + url.path)
+        if !running { start() }
     }
 
     func start() {
@@ -124,6 +137,15 @@ final class AppModel: ObservableObject {
         renderer?.reset()
         audio.begin()
         updateAudioDelay()
+        if isFileSource {
+            let src = VideoFileSource(url: URL(fileURLWithPath: String(selectedVideo.dropFirst(AppModel.filePrefix.count))))
+            guard src.open() else { errorText = "Video: \(src.error ?? "unbekannter Fehler")"; setRunning(false); return }
+            videoFile = src
+            src.start(store: store, audio: audio); setRunning(true)
+            stats.format = src.formatDescription
+            Log.write("Start: \(src.formatDescription), Modus \(mode.rawValue)")
+            return
+        }
         if selectedVideo == AppModel.demoID {
             demo.start(store: store, audio: audioSync ? audio : nil); setRunning(true)
             stats.format = "Demo 1280×720 · 60 Hz (Spiel 30 FPS)"
@@ -149,7 +171,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func stopSources() { demo.stop(); capture.stop(); audio.stop() }
+    private func stopSources() { demo.stop(); videoFile?.stop(); videoFile = nil; capture.stop(); audio.stop() }
 
     /// Sound delay = how long the picture is held back + manual fine tuning.
     func updateAudioDelay() {
@@ -187,7 +209,7 @@ final class AppModel: ObservableObject {
         stats.dupes = store.duplicateShare
         stats.displayHz = renderer?.displayHz ?? 0
         updateAudioDelay()
-        if stats.signal == 0 && selectedVideo != AppModel.demoID {
+        if stats.signal == 0 && !isVirtualSource {
             errorText = "Kein Signal – PS5 an? In der PS5: Einstellungen → System → HDMI → „HDCP aktivieren“ AUS."
         } else if errorText?.hasPrefix("Kein Signal") == true { errorText = nil }
     }

@@ -48,6 +48,17 @@ final class Renderer: NSObject, MTKViewDelegate {
     var active = false
     private var lastDraw: CFTimeInterval = 0
     private var framesSinceFlush = 0
+    // frame pacing measurement (video test): when did each new image reach the screen?
+    private var measuring = false
+    private var measuredPresented: [Double] = []
+    private var measuredDrawn: [Double] = []
+
+    func beginMeasure() { statLock.lock(); measuredPresented = []; measuredDrawn = []; measuring = true; statLock.unlock() }
+    func endMeasure() -> (presented: [Double], drawn: [Double]) {
+        statLock.lock(); defer { statLock.unlock() }
+        measuring = false
+        return (measuredPresented.sorted(), measuredDrawn)
+    }
     private var drawPeriod: Double = 1.0 / 60.0
 
     /// How long the picture is held back compared to the moment it arrived from the capture card:
@@ -131,7 +142,17 @@ final class Renderer: NSObject, MTKViewDelegate {
 
         if lastShown.0 != lastSeq || abs(lastShown.1 - t) > 0.001 {
             lastShown = (lastSeq, t)
-            statLock.lock(); presentTimes.append(now); if presentTimes.count > 300 { presentTimes.removeFirst(presentTimes.count - 300) }; statLock.unlock()
+            statLock.lock()
+            presentTimes.append(now); if presentTimes.count > 300 { presentTimes.removeFirst(presentTimes.count - 300) }
+            let m = measuring
+            if m { measuredDrawn.append(now) }
+            statLock.unlock()
+            if m {
+                drawable.addPresentedHandler { [weak self] d in
+                    guard let self = self, d.presentedTime > 0 else { return }
+                    self.statLock.lock(); self.measuredPresented.append(d.presentedTime); self.statLock.unlock()
+                }
+            }
         }
         cmd.addCompletedHandler { [weak self] cb in
             let ms = (cb.gpuEndTime - cb.gpuStartTime) * 1000

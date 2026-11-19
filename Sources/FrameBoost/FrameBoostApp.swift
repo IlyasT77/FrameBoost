@@ -15,6 +15,7 @@ struct FrameBoostApp: App {
     @StateObject private var model = AppModel()
 
     static var soak: SoakTest?
+    static var videoTest: VideoTest?
 
     init() {
         let args = CommandLine.arguments
@@ -24,6 +25,10 @@ struct FrameBoostApp: App {
         if let i = args.firstIndex(of: "--selftest") {
             let dir = i + 1 < args.count ? args[i + 1] : "selftest-output"
             exit(SelfTest.run(outputDir: dir) ? 0 : 1)
+        }
+        if let i = args.firstIndex(of: "--render60"), i + 2 < args.count {
+            let secs = args.firstIndex(of: "--seconds").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil } ?? 20
+            exit(Render60.run(input: URL(fileURLWithPath: args[i + 1]), output: URL(fileURLWithPath: args[i + 2]), seconds: secs) ? 0 : 1)
         }
         if let i = args.firstIndex(of: "--make-icon"), i + 1 < args.count {
             IconMaker.write(to: args[i + 1]); exit(0)
@@ -39,7 +44,7 @@ struct FrameBoostApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear {
                     let args = CommandLine.arguments
-                    if !args.contains("--soak"), !args.contains("--demo"), let crash = Log.takePreviousCrash() {
+                    if !args.contains("--soak"), !args.contains("--demo"), !args.contains("--videotest"), let crash = Log.takePreviousCrash() {
                         model.lastCrash = crash
                         DispatchQueue.main.async {
                             let a = NSAlert()
@@ -51,6 +56,13 @@ struct FrameBoostApp: App {
                         }
                     }
                     if args.contains("--demo") { model.selectedVideo = AppModel.demoID; model.start() }
+                    if let i = args.firstIndex(of: "--videotest"), i + 1 < args.count, FrameBoostApp.videoTest == nil {
+                        let dir = args.firstIndex(of: "--soak-dir").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "videotest-output"
+                        let secs = args.firstIndex(of: "--seconds").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil } ?? 30
+                        let t = VideoTest(model: model, url: URL(fileURLWithPath: args[i + 1]), dir: dir, seconds: secs)
+                        FrameBoostApp.videoTest = t
+                        t.run()
+                    }
                     if let i = args.firstIndex(of: "--soak"), FrameBoostApp.soak == nil {
                         // "--soak 600 --soak-dir /path": a bare path argument would make macOS treat it as a file to open
                         // (SwiftUI then skips the main window), so the folder comes as a named option

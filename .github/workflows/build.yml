@@ -36,7 +36,7 @@ jobs:
         run: brew install create-dmg
       - name: Build app + DMG
         env:
-          VERSION: "2.3.0"
+          VERSION: "2.4.0"
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
@@ -46,6 +46,52 @@ jobs:
           set -o pipefail
           mkdir -p ci-output
           ./build/FrameBoost.app/Contents/MacOS/FrameBoost --selftest ci-output 2>&1 | tee ci-output/selftest-log.txt
+      - name: Apple Silicon check (universal binary)
+        if: always()
+        run: |
+          mkdir -p ci-output
+          {
+            echo "Mac des Testservers: $(sysctl -n machdep.cpu.brand_string) · $(uname -m)"
+            echo "App-Datei: $(lipo -info build/FrameBoost.app/Contents/MacOS/FrameBoost)"
+            echo "Läuft gerade als: $(file build/FrameBoost.app/Contents/MacOS/FrameBoost | tr '\n' ' ')"
+          } | tee ci-output/architektur.txt
+      - name: 30 FPS test video
+        if: always()
+        run: |
+          brew install ffmpeg >/dev/null
+          if curl -L --fail --silent --max-time 300 -o bbb.mp4 https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_normal.mp4; then
+            ffmpeg -loglevel error -y -ss 62 -t 20 -i bbb.mp4 -r 30 -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p -c:a aac testvideo_30fps.mp4
+            echo "Testvideo: Big Buck Bunny (Blender Foundation, CC BY 3.0), 1080p, 30 FPS, 20 s" > ci-output/testvideo.txt
+          else
+            ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1920x1080:rate=30 -t 20 -c:v libx264 -preset veryfast -pix_fmt yuv420p testvideo_30fps.mp4
+            echo "Testvideo: ffmpeg testsrc2, 1080p, 30 FPS, 20 s" > ci-output/testvideo.txt
+          fi
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate -of csv=p=0 testvideo_30fps.mp4 | tee -a ci-output/testvideo.txt
+      - name: Video test – 30 FPS video as capture card, lock to 60 FPS
+        if: always()
+        timeout-minutes: 6
+        run: |
+          set +e
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --videotest "$PWD/testvideo_30fps.mp4" --soak-dir "$PWD/ci-output" --seconds 40 > ci-output/videotest-stdout.txt 2>&1 &
+          PID=$!
+          for i in $(seq 1 60); do
+            sleep 2
+            [ $i -eq 15 ] && screencapture -x ci-output/videotest.png
+            kill -0 $PID 2>/dev/null || break
+          done
+          if kill -0 $PID 2>/dev/null; then sample $PID 5 -file ci-output/videotest_haenger_stack.txt; kill -9 $PID; fi
+          wait $PID; CODE=$?
+          cat ci-output/videotest-report.txt
+          exit $CODE
+      - name: Before/after video (30 vs 60 FPS)
+        if: always()
+        run: |
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --render60 "$PWD/testvideo_30fps.mp4" "$PWD/frameboost_60fps.mp4" --seconds 20
+          FONT=/System/Library/Fonts/Supplemental/Arial.ttf
+          ffmpeg -loglevel error -y -i testvideo_30fps.mp4 -i frameboost_60fps.mp4 -filter_complex \
+            "[0:v]fps=60,scale=960:-2,drawtext=fontfile=$FONT:text='Original 30 FPS':x=20:y=20:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.5[a];[1:v]scale=960:-2,drawtext=fontfile=$FONT:text='FrameBoost 60 FPS':x=20:y=20:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.5[b];[a][b]hstack" \
+            -r 60 -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -movflags +faststart ci-output/vergleich_30_vs_60fps.mp4
+          ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate,nb_frames -of csv=p=0 frameboost_60fps.mp4 | tee ci-output/frameboost_60fps_info.txt
       - name: App screenshots
         if: always()
         continue-on-error: true

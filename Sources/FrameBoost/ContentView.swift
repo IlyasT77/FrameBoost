@@ -1,5 +1,6 @@
 import SwiftUI
 import MetalKit
+import UniformTypeIdentifiers
 
 enum Theme {
     static let accent = Color(red: 1.0, green: 0.31, blue: 0.545)        // #FF4F8B
@@ -91,7 +92,7 @@ struct TopBar: View {
 
     private var statusColor: Color {
         guard model.running else { return .gray }
-        return model.stats.signal > 0 || model.selectedVideo == AppModel.demoID ? .green : .orange
+        return model.stats.signal > 0 || model.isVirtualSource ? .green : .orange
     }
 
     var body: some View {
@@ -106,6 +107,7 @@ struct TopBar: View {
                         }
                     }
                     Button { model.selectVideo(AppModel.demoID) } label: { Label("Demo-Signal", systemImage: "play.rectangle") }
+                    Button { TopBar.chooseVideoFile(model) } label: { Label("Videodatei als Capture Card …", systemImage: "film") }
                 }
                 Divider()
                 Button { model.refreshDevices(autostart: false) } label: { Label("Geräte neu suchen", systemImage: "arrow.clockwise") }
@@ -142,6 +144,16 @@ struct TopBar: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line))
         .padding(.horizontal, 12).padding(.top, 10)
+    }
+}
+
+extension TopBar {
+    /// Any video file can stand in for a capture card (e.g. a 30 FPS recording to try frame generation).
+    static func chooseVideoFile(_ model: AppModel) {
+        let p = NSOpenPanel()
+        p.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie]
+        p.message = "Video auswählen – es läuft wie eine Capture Card (60-Hz-Signal)"
+        if p.runModal() == .OK, let url = p.url { model.selectVideoFile(url) }
     }
 }
 

@@ -88,6 +88,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         self.interp = interp; self.store = store; self.settings = settings
         super.init()
         CVMetalTextureCacheCreate(nil, nil, interp.device, nil, &cache)
+        // start the motion analysis the moment a real frame arrives (not only at the next refresh)
+        store.onNewFrame = { [weak self] in DispatchQueue.main.async { self?.ingestNow() } }
     }
 
     func reset() {
@@ -108,6 +110,11 @@ final class Renderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     private var pendingPair: (a: CFTimeInterval, b: CFTimeInterval, i: Double)?
+
+    private func ingestNow() {
+        guard active, let f = store.take(after: lastSeq) else { return }
+        analyse(f)
+    }
 
     /// Encodes copy + motion analysis of a new real frame in its own command buffer (same queue = runs
     /// after this refresh's image and before the next refresh's work).

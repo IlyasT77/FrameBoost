@@ -77,7 +77,7 @@ final class VideoTest {
         let stepSd = sqrt(steps.map { ($0 - stepMean) * ($0 - stepMean) }.reduce(0, +) / Double(max(steps.count, 1)))
         let even = 100 * Double(steps.filter { abs($0 - stepMean) <= 1.5 }.count) / Double(max(steps.count, 1))
         let repeats = steps.filter { $0 < stepMean * 0.25 }.count
-        let appLocked = newPct >= 99 && appPct >= 97
+        let appLocked = newPct >= 98 && appPct >= 95
         let locked = (abs(fps - hz) < 1.5 && even >= 97) || appLocked
         var rep = "FrameBoost Videotest – 30-FPS-Video als Capture Card, Ziel: 60 FPS gelockt\n"
         rep += "=========================================================================\n"

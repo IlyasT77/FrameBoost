@@ -29,6 +29,8 @@ final class FrameStore {
     private var dropped = 0, total = 0
 
     var dedupEnabled = true
+    /// called (on the delivering thread, outside the lock) when a new real frame is available
+    var onNewFrame: (() -> Void)?
     var cutThreshold: Float = 38   // mean abs luma difference (0..255) that counts as a scene cut
 
     func reset() {
@@ -42,6 +44,11 @@ final class FrameStore {
     private var dupThreshold: Float { min(max(noiseFloor * 2.5 + 0.4, 0.6), 3.0) }
 
     func push(_ pb: CVPixelBuffer, time: CFTimeInterval = CACurrentMediaTime()) {
+        if store(pb, time: time) { onNewFrame?() }
+    }
+
+    /// true if the frame was a new real frame
+    private func store(_ pb: CVPixelBuffer, time: CFTimeInterval) -> Bool {
         let samples = FrameStore.sample(pb)
         lock.lock(); defer { lock.unlock() }
         signalArrivals.append(time); if signalArrivals.count > 150 { signalArrivals.removeFirst() }
@@ -55,7 +62,7 @@ final class FrameStore {
             if dedupEnabled && regionMax < dupThreshold {
                 noiseFloor = noiseFloor * 0.95 + regionMax * 0.05
                 dropped += 1
-                return
+                return false
             }
         }
         let isCut = diff.isFinite && diff > cutThreshold
@@ -77,6 +84,7 @@ final class FrameStore {
         arrivals.append(time); if arrivals.count > 120 { arrivals.removeFirst() }
         seq &+= 1
         latest = SourceFrame(buffer: pb, time: smoothedTime, seq: seq, interval: interval, isCut: isCut)
+        return true
     }
 
     /// Returns the newest frame if it is newer than `after`.

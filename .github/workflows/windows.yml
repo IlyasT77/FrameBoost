@@ -54,8 +54,11 @@ jobs:
         env:
           FB_RASTER: '1'
         run: |
-          curl.exe -L --fail --silent --max-time 300 -o bbb.mp4 https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_normal.mp4
-          python main.py --videotest "$PWD\bbb.mp4" --soak-dir "$PWD\ci-win\videotest" --seconds 30 --video-start 62
+          curl.exe -L --fail --silent --max-time 600 -o bbb30.zip https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_normal.mp4.zip
+          Expand-Archive -Force bbb30.zip -DestinationPath bbb
+          $video = (Get-ChildItem bbb -Recurse -Filter *.mp4 | Select-Object -First 1).FullName
+          "Testvideo: $video" | Out-File ci-win\testvideo.txt
+          python main.py --videotest "$video" --soak-dir "$PWD\ci-win\videotest" --seconds 30 --video-start 62
           Get-Content ci-win\videotest\videotest-report.txt
       - name: Soak test (5 min, every feature)
         if: always()

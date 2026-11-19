@@ -39,6 +39,10 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var cache: CVMetalTextureCache?
     private var lastSeq: UInt64 = 0
     private var timeB: CFTimeInterval = 0
+    private var timeA: CFTimeInterval = 0
+    /// moment of the source timeline that is on screen. Advances by exactly one refresh per refresh
+    /// (vsync-locked) and only gently follows the incoming signal, so draw-call jitter never shows twice the same image.
+    private var outClock: CFTimeInterval = 0
     private var interval: Double = 1.0 / 30.0
     private var lastShown: (UInt64, Float) = (0, -1)
     private var presentTimes: [CFTimeInterval] = []
@@ -52,12 +56,13 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var measuring = false
     private var measuredPresented: [Double] = []
     private var measuredDrawn: [Double] = []
+    private var measuredMedia: [Double] = []
 
-    func beginMeasure() { statLock.lock(); measuredPresented = []; measuredDrawn = []; measuring = true; statLock.unlock() }
-    func endMeasure() -> (presented: [Double], drawn: [Double]) {
+    func beginMeasure() { statLock.lock(); measuredPresented = []; measuredDrawn = []; measuredMedia = []; measuring = true; statLock.unlock() }
+    func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double]) {
         statLock.lock(); defer { statLock.unlock() }
         measuring = false
-        return (measuredPresented.sorted(), measuredDrawn)
+        return (measuredPresented.sorted(), measuredDrawn, measuredMedia)
     }
     private var drawPeriod: Double = 1.0 / 60.0
 
@@ -69,7 +74,7 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     var videoDelay: Double {
         statLock.lock(); defer { statLock.unlock() }
-        let fg = settings.mode == .off ? 0 : interval
+        let fg = settings.mode == .off ? 0 : interval + 0.3 * drawPeriod
         return fg + 1.5 * drawPeriod + _gpuMs / 1000
     }
 
@@ -80,7 +85,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     }
 
     func reset() {
-        lastSeq = 0; timeB = 0; lastShown = (0, -1)
+        lastSeq = 0; timeB = 0; timeA = 0; outClock = 0; lastShown = (0, -1)
         statLock.lock(); presentTimes.removeAll(); statLock.unlock()
         interp.reset()
     }
@@ -99,6 +104,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable, let cmd = interp.queue.makeCommandBuffer() else { return }
         let now = CACurrentMediaTime()
+        let prevDraw = lastDraw
         if lastDraw > 0 {
             let dp = min(max(now - lastDraw, 0.004), 0.05)
             statLock.lock(); drawPeriod = drawPeriod * 0.95 + dp * 0.05; statLock.unlock()
@@ -114,7 +120,10 @@ final class Renderer: NSObject, MTKViewDelegate {
                let cvTex = cvTex, let tex = CVMetalTextureGetTexture(cvTex) {
                 interp.ingest(tex, isCut: f.isCut, cmd: cmd)
                 cmd.addCompletedHandler { _ in _ = cvTex; _ = pb } // keep the capture buffer alive until the copy ran
-                lastSeq = f.seq; timeB = f.time; interval = f.interval
+                lastSeq = f.seq
+                let gap = f.time - timeB
+                timeA = timeB > 0 && gap > 0.004 && gap < 0.1 ? timeB : f.time - f.interval
+                timeB = f.time; interval = f.interval
             }
         }
         guard active, interp.ready, let frame = interp.output else {
@@ -125,10 +134,22 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
         // where are we between frame A and frame B?
         let mode = settings.mode
+        let dp = drawPeriod
+        // vsync-locked output clock, one real frame (+ a little margin) behind the signal
+        let target = now - interval - 0.3 * dp
+        if outClock == 0 || prevDraw == 0 {
+            outClock = target
+        } else {
+            let steps = max(1, Int(((now - prevDraw) / dp).rounded()))
+            outClock += Double(steps) * dp
+            let err = target - outClock
+            if abs(err) > 2.5 * dp { outClock = target } else { outClock += err * 0.03 }
+        }
         var t: Float = 1
         if mode != .off {
-            let phase = Float(min(max((now - timeB) / max(interval, 0.004), 0), 1))
-            if let m = mode.steps { t = min(floor(phase * Float(m) + 0.25) / Float(m), 1) } else { t = phase }
+            let span = max(timeB - timeA, 0.004)
+            let phase = Float(min(max((outClock - timeA) / span, 0), 1))
+            if let m = mode.steps { t = min((phase * Float(m)).rounded() / Float(m), 1) } else { t = phase }
         }
         let synthMode: SynthMode = mode == .off ? .passthrough : (settings.blendOnly ? .blend : .interpolate)
         let screen = drawable.texture
@@ -145,7 +166,7 @@ final class Renderer: NSObject, MTKViewDelegate {
             statLock.lock()
             presentTimes.append(now); if presentTimes.count > 300 { presentTimes.removeFirst(presentTimes.count - 300) }
             let m = measuring
-            if m { measuredDrawn.append(now) }
+            if m { measuredDrawn.append(now); measuredMedia.append(mode == .off ? timeB : timeA + Double(t) * (timeB - timeA)) }
             statLock.unlock()
             if m {
                 drawable.addPresentedHandler { [weak self] d in

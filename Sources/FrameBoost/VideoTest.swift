@@ -38,7 +38,7 @@ final class VideoTest {
 
     private func finish() {
         guard let r = model.renderer else { exit(3) }
-        let (presented, drawn) = r.endMeasure()
+        let (presented, drawn, media) = r.endMeasure()
         let s = model.stats
         // prefer real on-screen times; fall back to draw times (virtual displays may not report them)
         let usePresented = presented.count > drawn.count / 2
@@ -54,7 +54,14 @@ final class VideoTest {
         let onTime = intervals.filter { abs($0 - target) <= 2.0 }.count
         let onTimePct = 100 * Double(onTime) / Double(max(intervals.count, 1))
         let hitches = intervals.filter { $0 > target * 1.5 }.count
-        let locked = abs(fps - hz) < 1.5 && onTimePct >= 95
+        // content cadence: how far the shown moment of the video advances from image to image
+        var steps: [Double] = []
+        for i in 1..<max(media.count, 1) { steps.append((media[i] - media[i - 1]) * 1000) }
+        let stepMean = steps.reduce(0, +) / Double(max(steps.count, 1))
+        let stepSd = sqrt(steps.map { ($0 - stepMean) * ($0 - stepMean) }.reduce(0, +) / Double(max(steps.count, 1)))
+        let even = 100 * Double(steps.filter { abs($0 - stepMean) <= 1.5 }.count) / Double(max(steps.count, 1))
+        let repeats = steps.filter { $0 < stepMean * 0.25 }.count
+        let locked = abs(fps - hz) < 1.5 && even >= 97
         var rep = "FrameBoost Videotest – 30-FPS-Video als Capture Card, Ziel: 60 FPS gelockt\n"
         rep += "=========================================================================\n"
         rep += "Video: \(url.lastPathComponent) · \(s.format)\n"
@@ -66,6 +73,8 @@ final class VideoTest {
         rep += String(format: "Bildabstand: Mittel %.2f ms (Ziel %.2f ms), Streuung %.2f ms, 1%%: %.2f ms, 99%%: %.2f ms\n",
                       mean, target, sd, VideoTest.percentile(intervals, 0.01), VideoTest.percentile(intervals, 0.99))
         rep += String(format: "Pünktlich (±2 ms): %.1f %% · Hänger (> 1,5 Bildabstände): %d\n", onTimePct, hitches)
+        rep += String(format: "Bildinhalt: rückt pro Bild %.2f ms im Video vor (Streuung %.2f ms), gleichmäßig (±1,5 ms): %.1f %%, doppelte Bilder: %d\n",
+                      stepMean, stepSd, even, repeats)
         rep += String(format: "Ton-Puffer: %.0f ms\n", s.audioDelayMs)
         rep += locked ? "ERGEBNIS: 60 FPS GELOCKT ✔\n" : "ERGEBNIS: NICHT GELOCKT\n"
         try? rep.write(toFile: dir + "/videotest-report.txt", atomically: true, encoding: .utf8)

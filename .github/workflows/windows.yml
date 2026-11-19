@@ -5,6 +5,11 @@ on:
     paths: ['windows/**', '.github/workflows/windows.yml']
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release-Version, z. B. v2.4.0 (leer = nur bauen)'
+        required: false
+        default: ''
 permissions:
   contents: write
 # a newer push cancels an older run, so an old build can never overwrite the download
@@ -88,12 +93,13 @@ jobs:
           prerelease: true
           make_latest: false
           files: windows/dist/FrameBoost.exe
-      - name: Official release (tag v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Official release (tag v*, or started by hand with a version)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: FrameBoost ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: FrameBoost ${{ github.event.inputs.version || github.ref_name }}
           body_path: RELEASE_NOTES.md
           make_latest: true
           files: windows/dist/FrameBoost.exe

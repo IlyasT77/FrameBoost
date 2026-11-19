@@ -69,6 +69,15 @@ def run(out_dir: str) -> bool:
     cut_ok = st.take(1)[4] is True
     say(f"Doppelte Frames entfernen: {'OK' if dup_ok else 'FEHLER'} · Szenenwechsel-Erkennung: {'OK' if cut_ok else 'FEHLER'}")
     ok = ok and dup_ok and cut_ok
+    # calm scene: only a small object moves by 1 pixel -> must count as a NEW frame
+    st3 = FrameStore()
+    calm = lambda x: cv2.rectangle(demo.frame_at(5).copy(), (600 + x, 300), (624 + x, 324), (255, 255, 255), -1)
+    c0, c1, c2 = calm(0), calm(1), calm(2)
+    for fr, tt in ((c0, 1.0), (c0.copy(), 1.016), (c1, 1.033), (c1.copy(), 1.05), (c2, 1.066)):
+        st3.push(fr, tt)
+    calm_ok = st3.take(0)[2] == 3
+    say(f"Ruhige Szene (kleines Objekt bewegt sich 1 Pixel) wird als neues Bild erkannt: {'OK' if calm_ok else 'FEHLER'}")
+    ok = ok and calm_ok
 
     # sound delay line: capture chunks of 10 ms, output callbacks of 512 frames with 0.1 % faster clock
     rate, C, F = 48000, 480, 512

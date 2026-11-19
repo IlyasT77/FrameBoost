@@ -28,7 +28,9 @@ struct FrameBoostApp: App {
         }
         if let i = args.firstIndex(of: "--render60"), i + 2 < args.count {
             let secs = args.firstIndex(of: "--seconds").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil } ?? 20
-            exit(Render60.run(input: URL(fileURLWithPath: args[i + 1]), output: URL(fileURLWithPath: args[i + 2]), seconds: secs) ? 0 : 1)
+            let label = args.firstIndex(of: "--label").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+            exit(Render60.run(input: URL(fileURLWithPath: args[i + 1]), output: URL(fileURLWithPath: args[i + 2]), seconds: secs,
+                              hold: args.contains("--hold"), label: label) ? 0 : 1)
         }
         if let i = args.firstIndex(of: "--make-icon"), i + 1 < args.count {
             IconMaker.write(to: args[i + 1]); exit(0)

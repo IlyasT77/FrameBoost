@@ -28,7 +28,7 @@ class FrameStore:
             self.last_unique = 0.0
             self.smoothed = 0.0
             self.interval = 1 / 30
-            self.noise = 0.3
+            self.noise = 0.1
             self.arrivals = []
             self.signal = []
             self.dropped = 0
@@ -36,11 +36,15 @@ class FrameStore:
 
     @staticmethod
     def _samples(frame: np.ndarray) -> np.ndarray:
-        h, w = frame.shape[:2]
-        ys = (np.arange(36) * 2 + 1) * h // 72
-        xs = (np.arange(64) * 2 + 1) * w // 128
-        s = frame[ys][:, xs].astype(np.float32)
-        return s[..., 0] * 0.114 + s[..., 1] * 0.587 + s[..., 2] * 0.299
+        """128×72 area-averaged luma (every changed pixel counts)."""
+        small = cv2.resize(frame, (128, 72), interpolation=cv2.INTER_AREA).astype(np.float32)
+        return small[..., 0] * 0.114 + small[..., 1] * 0.587 + small[..., 2] * 0.299
+
+    @staticmethod
+    def compare(a: np.ndarray, b: np.ndarray):
+        """(largest mean difference of the 16×9 regions, mean difference) - one changed region = new frame."""
+        regions = np.abs(a - b).reshape(9, 8, 16, 8).mean(axis=(1, 3))
+        return float(regions.max()), float(regions.mean())
 
     def push(self, frame: np.ndarray, t: float | None = None):
         t = now() if t is None else t
@@ -51,10 +55,10 @@ class FrameStore:
             self.total += 1
             diff = float("inf")
             if self.last_samples is not None and self.last_samples.shape == samples.shape:
-                diff = float(np.abs(samples - self.last_samples).mean())
-                thr = min(max(self.noise * 3 + 0.6, 1.0), 4.0)
-                if self.dedup and diff < thr:
-                    self.noise = self.noise * 0.95 + diff * 0.05
+                region_max, diff = self.compare(samples, self.last_samples)
+                thr = min(max(self.noise * 2.5 + 0.4, 0.6), 3.0)
+                if self.dedup and region_max < thr:
+                    self.noise = self.noise * 0.95 + region_max * 0.05
                     self.dropped += 1
                     return
             is_cut = diff != float("inf") and diff > self.cut_threshold

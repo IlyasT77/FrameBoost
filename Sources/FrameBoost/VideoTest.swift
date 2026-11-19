@@ -90,7 +90,26 @@ final class VideoTest {
 /// `FrameBoost --render60 <in> <out.mp4> [--seconds 20]`: writes the video with FrameBoost frame generation
 /// at double frame rate (30 → 60 FPS) using exactly the app's GPU pipeline, to watch the result.
 enum Render60 {
-    static func run(input: URL, output: URL, seconds: Double) -> Bool {
+    static func drawLabel(_ pb: CVPixelBuffer, _ text: String) {
+        CVPixelBufferLockBaseAddress(pb, []); defer { CVPixelBufferUnlockBaseAddress(pb, []) }
+        let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb)
+        guard let ctx = CGContext(data: CVPixelBufferGetBaseAddress(pb), width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: CVPixelBufferGetBytesPerRow(pb), space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return }
+        let size = CGFloat(h) / 18
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: size), .foregroundColor: NSColor.white]
+        let str = text as NSString
+        let tw = str.size(withAttributes: attrs).width
+        ctx.setFillColor(CGColor(gray: 0, alpha: 0.55))
+        ctx.fill(CGRect(x: size * 0.6, y: CGFloat(h) - size * 2.3, width: tw + size, height: size * 1.6))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        str.draw(at: NSPoint(x: size * 1.1, y: CGFloat(h) - size * 2.05), withAttributes: attrs)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// hold = only repeat each real frame (= the original 30 FPS shown at 60 Hz); label = text burnt into the picture
+    static func run(input: URL, output: URL, seconds: Double, hold: Bool = false, label: String? = nil) -> Bool {
         guard let device = MTLCreateSystemDefaultDevice(), let interp = try? Interpolator(device: device) else { print("GPU-Fehler"); return false }
         let asset = AVURLAsset(url: input)
         guard let track = asset.tracks(withMediaType: .video).first, let reader = try? AVAssetReader(asset: asset) else { print("Video nicht lesbar"); return false }
@@ -127,6 +146,7 @@ enum Render60 {
             return (t, c)
         }
         func append(_ pb: CVPixelBuffer, _ index: Int) {
+            if let l = label { drawLabel(pb, l) }
             while !input.isReadyForMoreMediaData { Thread.sleep(forTimeInterval: 0.002) }
             adaptor.append(pb, withPresentationTime: CMTime(value: CMTimeValue(index), timescale: CMTimeScale(fps * 2)))
         }
@@ -138,7 +158,9 @@ enum Render60 {
             interp.ingest(tex, cmd: cmd)
             cmd.commit(); cmd.waitUntilCompleted()
             _ = cvt
-            if k > 0, let pool = adaptor.pixelBufferPool {
+            if k > 0, hold {
+                append(pb, 2 * k - 1)             // original: the same real image once more
+            } else if k > 0, let pool = adaptor.pixelBufferPool {
                 var outPB: CVPixelBuffer?
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &outPB)
                 if let o = outPB, let dst = texture(o, writable: true) {

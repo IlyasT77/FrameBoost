@@ -131,6 +131,23 @@ enum SelfTest {
             let dupOK = s2.take(after: 0)?.seq == 1
             say("Doppelte Frames entfernen: \(dupOK ? "OK" : "FEHLER")")
             if !dupOK { ok = false }
+            // calm scene: only a small object moves by 1 pixel -> must count as a NEW frame, not as a repeat
+            func calm(_ x: Int) -> CVPixelBuffer {
+                let pb = demo.render(frame: 5)!
+                CVPixelBufferLockBaseAddress(pb, [])
+                let ctx = CGContext(data: CVPixelBufferGetBaseAddress(pb), width: W, height: H, bitsPerComponent: 8,
+                                    bytesPerRow: CVPixelBufferGetBytesPerRow(pb), space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+                ctx.setFillColor(CGColor(gray: 1, alpha: 1)); ctx.fill(CGRect(x: 600 + x, y: 300, width: 24, height: 24))
+                CVPixelBufferUnlockBaseAddress(pb, [])
+                return pb
+            }
+            let s3 = FrameStore()
+            let c0 = calm(0), c1 = calm(1), c2 = calm(2)
+            s3.push(c0, time: 1.0); s3.push(c0, time: 1.016); s3.push(c1, time: 1.033); s3.push(c1, time: 1.05); s3.push(c2, time: 1.066)
+            let calmOK = s3.take(after: 0)?.seq == 3
+            say("Ruhige Szene (kleines Objekt bewegt sich 1 Pixel) wird als neues Bild erkannt: \(calmOK ? "OK" : "FEHLER")")
+            if !calmOK { ok = false }
         }
 
         // --- Sound buffer: simulated capture card (10 ms chunks) + sound output (512-frame callbacks,

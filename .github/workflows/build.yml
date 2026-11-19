@@ -91,10 +91,11 @@ jobs:
       - name: Before/after video + quality against the real 60 FPS frames
         if: always()
         run: |
-          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --render60 "$PWD/testvideo_30fps.mp4" "$PWD/frameboost_60fps.mp4" --seconds 20
-          FONT=/System/Library/Fonts/Supplemental/Arial.ttf
-          ffmpeg -loglevel error -y -i testvideo_30fps.mp4 -i frameboost_60fps.mp4 -filter_complex \
-            "[0:v]fps=60,scale=960:-2,drawtext=fontfile=$FONT:text='Original 30 FPS':x=20:y=20:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.5[a];[1:v]scale=960:-2,drawtext=fontfile=$FONT:text='FrameBoost 60 FPS':x=20:y=20:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.5[b];[a][b]hstack" \
+          FB=./build/FrameBoost.app/Contents/MacOS/FrameBoost
+          $FB --render60 "$PWD/testvideo_30fps.mp4" "$PWD/frameboost_60fps.mp4" --seconds 20
+          $FB --render60 "$PWD/testvideo_30fps.mp4" "$PWD/l_fb.mp4" --seconds 20 --label "FrameBoost 60 FPS"
+          $FB --render60 "$PWD/testvideo_30fps.mp4" "$PWD/l_orig.mp4" --seconds 20 --hold --label "Original 30 FPS"
+          ffmpeg -loglevel error -y -i l_orig.mp4 -i l_fb.mp4 -filter_complex "[0:v]scale=960:-2[a];[1:v]scale=960:-2[b];[a][b]hstack" \
             -r 60 -c:v libx264 -preset veryfast -crf 22 -pix_fmt yuv420p -movflags +faststart ci-output/vergleich_30_vs_60fps.mp4
           # other ways to get 60 FPS out of the same 30 FPS video (first 10 s)
           ffmpeg -loglevel error -y -t 10 -i testvideo_30fps.mp4 -vf fps=60 -c:v libx264 -crf 12 -preset veryfast hold60.mp4

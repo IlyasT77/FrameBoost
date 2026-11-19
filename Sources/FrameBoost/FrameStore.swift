@@ -1,5 +1,6 @@
 import CoreVideo
 import QuartzCore
+import Accelerate
 
 struct SourceFrame {
     let buffer: CVPixelBuffer
@@ -24,7 +25,7 @@ final class FrameStore {
     private var interval: Double = 1.0 / 30.0
     private var arrivals: [CFTimeInterval] = []
     private var signalArrivals: [CFTimeInterval] = []
-    private var noiseFloor: Float = 0.3
+    private var noiseFloor: Float = 0.1
     private var dropped = 0, total = 0
 
     var dedupEnabled = true
@@ -33,11 +34,12 @@ final class FrameStore {
     func reset() {
         lock.lock()
         latest = nil; seq = 0; lastSamples = []; arrivals = []; signalArrivals = []
-        interval = 1.0 / 30.0; lastUniqueTime = 0; smoothedTime = 0; noiseFloor = 0.3; dropped = 0; total = 0
+        interval = 1.0 / 30.0; lastUniqueTime = 0; smoothedTime = 0; noiseFloor = 0.1; dropped = 0; total = 0
         lock.unlock()
     }
 
-    private var dupThreshold: Float { min(max(noiseFloor * 3 + 0.6, 1.0), 4.0) }
+    /// exact repeats (uncompressed cards) give 0; MJPEG sticks add some noise -> threshold follows the noise
+    private var dupThreshold: Float { min(max(noiseFloor * 2.5 + 0.4, 0.6), 3.0) }
 
     func push(_ pb: CVPixelBuffer, time: CFTimeInterval = CACurrentMediaTime()) {
         let samples = FrameStore.sample(pb)
@@ -46,11 +48,12 @@ final class FrameStore {
         total += 1
         var diff: Float = .infinity
         if samples.count == lastSamples.count, !samples.isEmpty {
-            var d: Float = 0
-            for i in 0..<samples.count { d += abs(samples[i] - lastSamples[i]) }
-            diff = d / Float(samples.count)
-            if dedupEnabled && diff < dupThreshold {
-                noiseFloor = noiseFloor * 0.95 + diff * 0.05
+            // 144 regions (16×9): a frame is new as soon as ONE region changed - small movements in calm
+            // scenes (a walking character, a slow pan) must not get lost in the average of the whole picture
+            let (regionMax, mean) = FrameStore.compare(samples, lastSamples)
+            diff = mean
+            if dedupEnabled && regionMax < dupThreshold {
+                noiseFloor = noiseFloor * 0.95 + regionMax * 0.05
                 dropped += 1
                 return
             }
@@ -96,22 +99,43 @@ final class FrameStore {
     /// share of repeated frames that were removed
     var duplicateShare: Double { lock.lock(); defer { lock.unlock() }; return total > 0 ? Double(dropped) / Double(total) : 0 }
 
-    /// ~2300 luma samples on a sparse grid (cheap CPU check for repeated frames / scene cuts)
+    static let gridW = 128, gridH = 72
+
+    /// 128×72 area-averaged luma (vImage downscale: every changed pixel counts, also 1-pixel movements)
     static func sample(_ pb: CVPixelBuffer) -> [Float] {
         guard CVPixelBufferGetPixelFormatType(pb) == kCVPixelFormatType_32BGRA else { return [] }
         CVPixelBufferLockBaseAddress(pb, .readOnly); defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pb) else { return [] }
-        let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb), bpr = CVPixelBufferGetBytesPerRow(pb)
-        let p = base.assumingMemoryBound(to: UInt8.self)
-        var out: [Float] = []; out.reserveCapacity(64 * 36)
-        for gy in 0..<36 {
-            let y = (gy * 2 + 1) * h / 72
-            for gx in 0..<64 {
-                let x = (gx * 2 + 1) * w / 128
-                let o = y * bpr + x * 4
-                out.append(Float(p[o]) * 0.114 + Float(p[o + 1]) * 0.587 + Float(p[o + 2]) * 0.299)
-            }
+        var src = vImage_Buffer(data: base, height: vImagePixelCount(CVPixelBufferGetHeight(pb)),
+                                width: vImagePixelCount(CVPixelBufferGetWidth(pb)), rowBytes: CVPixelBufferGetBytesPerRow(pb))
+        var small = [UInt8](repeating: 0, count: gridW * gridH * 4)
+        let err = small.withUnsafeMutableBytes { raw -> vImage_Error in
+            var dst = vImage_Buffer(data: raw.baseAddress, height: vImagePixelCount(gridH), width: vImagePixelCount(gridW), rowBytes: gridW * 4)
+            return vImageScale_ARGB8888(&src, &dst, nil, vImage_Flags(kvImageNoFlags))
+        }
+        guard err == kvImageNoError else { return [] }
+        var out = [Float](repeating: 0, count: gridW * gridH)
+        for i in 0..<(gridW * gridH) {
+            let o = i * 4   // BGRA
+            out[i] = Float(small[o]) * 0.114 + Float(small[o + 1]) * 0.587 + Float(small[o + 2]) * 0.299
         }
         return out
+    }
+
+    /// (largest mean difference of the 16×9 regions, mean difference of the whole picture)
+    static func compare(_ a: [Float], _ b: [Float]) -> (Float, Float) {
+        var regionMax: Float = 0, total: Float = 0
+        for ry in 0..<9 {
+            for rx in 0..<16 {
+                var s: Float = 0
+                for y in 0..<8 {
+                    let row = (ry * 8 + y) * gridW + rx * 8
+                    for x in 0..<8 { s += abs(a[row + x] - b[row + x]) }
+                }
+                s /= 64
+                regionMax = max(regionMax, s); total += s
+            }
+        }
+        return (regionMax, total / 144)
     }
 }

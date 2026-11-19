@@ -23,6 +23,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleName</key><string>FrameBoost</string>
+  <key>CFBundleDevelopmentRegion</key><string>de</string>
+  <key>CFBundleLocalizations</key><array><string>de</string></array>
   <key>CFBundleDisplayName</key><string>FrameBoost</string>
   <key>CFBundleExecutable</key><string>FrameBoost</string>
   <key>CFBundleIdentifier</key><string>app.frameboost.mac</string>

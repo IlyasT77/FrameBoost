@@ -126,7 +126,7 @@ final class AppModel: ObservableObject {
         updateAudioDelay()
         if selectedVideo == AppModel.demoID {
             demo.start(store: store, audio: audioSync ? audio : nil); setRunning(true)
-            stats.format = "Demo 1280×720 @ 60 Hz (Spiel: 30 FPS) · weißes Quadrat + Piepton = Sync-Test"
+            stats.format = "Demo 1280×720 · 60 Hz (Spiel 30 FPS)"
             Log.write("Start: Demo-Signal, Modus \(mode.rawValue), Qualität \(quality.rawValue)")
             return
         }

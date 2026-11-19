@@ -11,6 +11,9 @@ final class DemoSource {
     private var tick = 0
     private var pool: CVPixelBufferPool?
     private var current: CVPixelBuffer?
+    private let sound = SyntheticAudio()
+    /// sync test: white flash + beep once per second (only while the demo runs, not in the self test)
+    private var syncTest = false
 
     init() {
         let attrs: [String: Any] = [
@@ -23,20 +26,25 @@ final class DemoSource {
         CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &pool)
     }
 
-    func start(store: FrameStore) {
-        stop(); tick = 0
+    func start(store: FrameStore, audio: AudioDelayPlayer? = nil) {
+        stop(); tick = 0; syncTest = true
         let t = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
         t.schedule(deadline: .now(), repeating: .nanoseconds(16_666_667), leeway: .microseconds(500))
-        t.setEventHandler { [weak self, weak store] in
+        t.setEventHandler { [weak self, weak store, weak audio] in
             guard let self = self, let store = store else { return }
-            if self.tick % 2 == 0 || self.current == nil { self.current = self.render(frame: Double(self.tick / 2)) }
+            let gameFrame = self.tick / 2
+            if self.tick % 2 == 0 || self.current == nil {
+                self.current = self.render(frame: Double(gameFrame))
+                if gameFrame % 30 == 0 { self.sound.beep() }   // same moment as the white flash
+            }
             if let pb = self.current { store.push(pb) }
+            if let audio = audio, let sb = self.sound.next(frames: SyntheticAudio.rate / 60) { audio.enqueue(sb) }
             self.tick += 1
         }
         t.resume(); timer = t
     }
 
-    func stop() { timer?.cancel(); timer = nil }
+    func stop() { timer?.cancel(); timer = nil; syncTest = false }
 
     /// Renders game frame `frame` (fractional values give the exact in-between ground truth).
     func render(frame n: Double, fast: Bool = false) -> CVPixelBuffer? {
@@ -50,6 +58,10 @@ final class DemoSource {
         // flip to top-left origin
         ctx.translateBy(x: 0, y: CGFloat(h)); ctx.scaleBy(x: 1, y: -1)
         DemoSource.draw(ctx, w: CGFloat(w), h: CGFloat(h), n: n, fast: fast)
+        if syncTest && Int(n) % 30 == 0 && n == n.rounded() {
+            // picture/sound sync test: white square together with the beep
+            ctx.setFillColor(CGColor(gray: 1, alpha: 1)); ctx.fill(CGRect(x: 30, y: 30, width: 110, height: 110))
+        }
         return pb
     }
 

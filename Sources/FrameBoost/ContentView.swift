@@ -88,6 +88,7 @@ struct ContentView: View {
             Text("\(Int(model.stats.output.rounded())) FPS").font(.system(size: 26, weight: .bold, design: .monospaced)).foregroundStyle(.green)
             Text("Spiel \(Int(model.stats.game.rounded())) FPS · Signal \(Int(model.stats.signal.rounded())) Hz")
             Text(String(format: "GPU %.1f ms · Duplikate entfernt %d%%", model.stats.gpu, Int(model.stats.dupes * 100)))
+            if model.audioSync { Text(String(format: "Ton-Puffer %.0f ms", model.stats.audioDelayMs)) }
             Text(model.stats.format)
         }
         .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white)
@@ -148,6 +149,17 @@ struct SettingsView: View {
                     ForEach(model.audioDevices) { d in Text(d.name).tag(d.id) }
                 }
                 Slider(value: $model.volume, in: 0...1) { Text("Lautstärke") }
+                Toggle("Bild und Ton synchron (Ton-Puffer)", isOn: $model.audioSync)
+                if model.audioSync {
+                    Slider(value: $model.audioOffsetMs, in: -100...200, step: 5) {
+                        Text("Feinabstimmung")
+                    } minimumValueLabel: { Text("früher").font(.caption2) } maximumValueLabel: { Text("später").font(.caption2) }
+                    Text(String(format: "Ton wird um %.0f ms verzögert (automatisch %@ %.0f ms)", model.stats.audioDelayMs,
+                                model.audioOffsetMs >= 0 ? "+" : "−", abs(model.audioOffsetMs)))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Test: Demo-Signal starten – weißes Quadrat und Piepton müssen gleichzeitig kommen.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Frame Generation") {
                 Picker("Qualität", selection: $model.quality) {
@@ -165,6 +177,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 470)
+        .frame(width: 440, height: 600)
     }
 }

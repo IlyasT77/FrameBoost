@@ -1,0 +1,135 @@
+import AVFoundation
+import CoreMedia
+import QuartzCore
+
+/// Plays the capture card's sound through a buffer, delayed by exactly as long as the picture needs
+/// (frame generation holds back one real frame + GPU + display). Picture and sound stay in sync.
+///
+/// Timing: the first audio buffer anchors the mapping "sample timestamp -> host time".
+/// Each buffer with timestamp P is then played at (its arrival time + delay). Clock drift between the
+/// capture card's audio clock and the Mac is corrected when it grows beyond 15 ms.
+final class AudioDelayPlayer {
+    private let renderer = AVSampleBufferAudioRenderer()
+    private let sync = AVSampleBufferRenderSynchronizer()
+    private let lock = NSLock()
+    private var anchored = false
+    private var lastPTS = CMTime.invalid
+    private var lastArrival: CFTimeInterval = 0
+    private var _delay: Double = 0.06
+    private(set) var failed = false
+
+    init() {
+        sync.addRenderer(renderer)
+        sync.delaysRateChangeUntilHasSufficientMediaData = false   // our timing must apply immediately
+    }
+
+    var volume: Float {
+        get { renderer.volume }
+        set { renderer.volume = newValue }
+    }
+
+    /// Seconds between "sound arrives" and "sound is played".
+    var delay: Double {
+        get { lock.lock(); defer { lock.unlock() }; return _delay }
+        set {
+            lock.lock()
+            let changed = abs(newValue - _delay) > 0.004
+            _delay = max(0, min(newValue, 0.5))
+            let pts = lastPTS, arr = lastArrival, anchoredNow = anchored
+            lock.unlock()
+            if changed && anchoredNow && pts.isValid { retime(pts: pts, arrival: arr) }
+        }
+    }
+
+    /// Current playback error in seconds (positive = sound too late); for diagnostics.
+    private(set) var lastError: Double = 0
+
+    func enqueue(_ sb: CMSampleBuffer, arrival: CFTimeInterval = CACurrentMediaTime()) {
+        let pts = CMSampleBufferGetPresentationTimeStamp(sb)
+        guard pts.isValid else { return }
+        lock.lock()
+        let first = !anchored
+        anchored = true
+        lastPTS = pts; lastArrival = arrival
+        let d = _delay
+        lock.unlock()
+
+        if first {
+            retime(pts: pts, arrival: arrival)
+        } else {
+            // expected media time right now = pts - (delay - time since arrival)
+            let now = CACurrentMediaTime()
+            let expected = pts.seconds - d + (now - arrival)
+            let err = expected - sync.currentTime().seconds   // > 0: playback lags behind the target
+            lastError = err
+            if abs(err) > 0.015 { retime(pts: pts, arrival: arrival) }
+        }
+        if renderer.status == .failed { failed = true; return }
+        if renderer.isReadyForMoreMediaData { renderer.enqueue(sb) }
+    }
+
+    /// Media time `pts` shall be heard at host time `arrival + delay`.
+    private func retime(pts: CMTime, arrival: CFTimeInterval) {
+        let hostClock = CMClockGetHostTimeClock()
+        let atHost = CMTime(seconds: arrival + delay, preferredTimescale: 1_000_000_000)
+        // CACurrentMediaTime() and the host time clock share the same time base (mach_absolute_time)
+        let hostNow = CMClockGetTime(hostClock)
+        let offset = atHost.seconds - CACurrentMediaTime()
+        let target = CMTimeAdd(hostNow, CMTime(seconds: offset, preferredTimescale: 1_000_000_000))
+        sync.setRate(1.0, time: pts, atHostTime: target)
+    }
+
+    func stop() {
+        sync.setRate(0, time: .zero)
+        renderer.flush()
+        lock.lock(); anchored = false; lastPTS = .invalid; lock.unlock()
+    }
+}
+
+/// 48 kHz stereo float PCM generator (demo sound + self test): silence with optional 1 kHz beeps.
+final class SyntheticAudio {
+    static let rate = 48000
+    private var format: CMAudioFormatDescription?
+    private(set) var sampleIndex: Int64 = 0
+    private var beepUntil: Int64 = -1
+
+    init() {
+        var asbd = AudioStreamBasicDescription(mSampleRate: Float64(SyntheticAudio.rate), mFormatID: kAudioFormatLinearPCM,
+                                               mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+                                               mBytesPerPacket: 8, mFramesPerPacket: 1, mBytesPerFrame: 8,
+                                               mChannelsPerFrame: 2, mBitsPerChannel: 32, mReserved: 0)
+        CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0,
+                                       magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+    }
+
+    /// Starts a short beep at the next generated sample.
+    func beep(seconds: Double = 0.04) { beepUntil = sampleIndex + Int64(seconds * Double(SyntheticAudio.rate)) }
+
+    func next(frames: Int) -> CMSampleBuffer? {
+        guard let format = format else { return nil }
+        let bytes = frames * 8
+        var block: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: bytes, blockAllocator: nil,
+                                                 customBlockSource: nil, offsetToData: 0, dataLength: bytes,
+                                                 flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block) == noErr,
+              let blockBuffer = block else { return nil }
+        var samples = [Float](repeating: 0, count: frames * 2)
+        for i in 0..<frames {
+            let s = sampleIndex + Int64(i)
+            if s < beepUntil {
+                let v = Float(sin(2 * Double.pi * 1000 * Double(s) / Double(SyntheticAudio.rate)) * 0.25)
+                samples[2 * i] = v; samples[2 * i + 1] = v
+            }
+        }
+        samples.withUnsafeBytes { raw in
+            _ = CMBlockBufferReplaceDataBytes(with: raw.baseAddress!, blockBuffer: blockBuffer, offsetIntoDestination: 0, dataLength: bytes)
+        }
+        var sb: CMSampleBuffer?
+        CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: nil, dataBuffer: blockBuffer, formatDescription: format,
+                                                             sampleCount: frames,
+                                                             presentationTimeStamp: CMTime(value: sampleIndex, timescale: CMTimeScale(SyntheticAudio.rate)),
+                                                             packetDescriptions: nil, sampleBufferOut: &sb)
+        sampleIndex += Int64(frames)
+        return sb
+    }
+}

@@ -44,6 +44,17 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var _gpuMs: Double = 0
     var gpuMs: Double { statLock.lock(); defer { statLock.unlock() }; return _gpuMs }
     var active = false
+    private var lastDraw: CFTimeInterval = 0
+    private var drawPeriod: Double = 1.0 / 60.0
+
+    /// How long the picture is held back compared to the moment it arrived from the capture card:
+    /// frame generation shows the moment between the last two real frames (one real frame behind),
+    /// plus GPU time and the display pipeline (~1.5 refreshes). The sound buffer uses this value.
+    var videoDelay: Double {
+        statLock.lock(); defer { statLock.unlock() }
+        let fg = settings.mode == .off ? 0 : interval
+        return fg + 1.5 * drawPeriod + _gpuMs / 1000
+    }
 
     init(interp: Interpolator, store: FrameStore, settings: RenderSettings) {
         self.interp = interp; self.store = store; self.settings = settings
@@ -71,6 +82,11 @@ final class Renderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable, let cmd = interp.queue.makeCommandBuffer() else { return }
         let now = CACurrentMediaTime()
+        if lastDraw > 0 {
+            let dp = min(max(now - lastDraw, 0.004), 0.05)
+            statLock.lock(); drawPeriod = drawPeriod * 0.95 + dp * 0.05; statLock.unlock()
+        }
+        lastDraw = now
         if active, let f = store.take(after: lastSeq), let cache = cache {
             var cvTex: CVMetalTexture?
             let pb = f.buffer

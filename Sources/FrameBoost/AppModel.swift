@@ -17,17 +17,22 @@ final class AppModel: ObservableObject {
     @Published var dedup = true { didSet { store.dedupEnabled = dedup; defaults.set(dedup, forKey: "dedup") } }
     @Published var compareBlend = false { didSet { settings.blendOnly = compareBlend } }
     @Published var showHUD = true { didSet { defaults.set(showHUD, forKey: "hud") } }
-    @Published var volume: Double = 1.0 { didSet { capture.volume = Float(volume); defaults.set(volume, forKey: "volume") } }
+    @Published var volume: Double = 1.0 { didSet { capture.volume = Float(volume); audio.volume = Float(volume); defaults.set(volume, forKey: "volume") } }
+    /// Sound through a buffer, delayed exactly like the picture (picture and sound in sync)
+    @Published var audioSync = true { didSet { capture.useAudioBuffer = audioSync; defaults.set(audioSync, forKey: "audioSync"); if running { start() } } }
+    /// manual fine tuning on top of the automatic delay (milliseconds, + = sound later)
+    @Published var audioOffsetMs: Double = 0 { didSet { defaults.set(audioOffsetMs, forKey: "audioOffset"); updateAudioDelay() } }
     @Published var running = false
     @Published var errorText: String?
     @Published var stats = Stats()
 
-    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, format = "" }
+    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, audioDelayMs = 0.0, format = "" }
 
     let store = FrameStore()
     let settings = RenderSettings()
     let capture = CaptureManager()
     let demo = DemoSource()
+    let audio = AudioDelayPlayer()
     let device: MTLDevice?
     let interp: Interpolator?
     lazy var renderer: Renderer? = { guard let ip = self.interp else { return nil }; return Renderer(interp: ip, store: self.store, settings: self.settings) }()
@@ -57,7 +62,11 @@ final class AppModel: ObservableObject {
         if defaults.object(forKey: "dedup") != nil { dedup = defaults.bool(forKey: "dedup") }
         if defaults.object(forKey: "hud") != nil { showHUD = defaults.bool(forKey: "hud") }
         if defaults.object(forKey: "volume") != nil { volume = defaults.double(forKey: "volume") }
+        if defaults.object(forKey: "audioSync") != nil { audioSync = defaults.bool(forKey: "audioSync") }
+        if defaults.object(forKey: "audioOffset") != nil { audioOffsetMs = defaults.double(forKey: "audioOffset") }
         settings.mode = mode; settings.sharpen = Float(sharpen); store.dedupEnabled = dedup; interp?.quality = quality
+        capture.audioPlayer = audio; capture.useAudioBuffer = audioSync
+        audio.volume = Float(volume); capture.volume = Float(volume)
 
         statTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.updateStats() }
         let nc = NotificationCenter.default
@@ -108,7 +117,9 @@ final class AppModel: ObservableObject {
         store.reset()
         renderer?.reset()
         if selectedVideo == AppModel.demoID {
-            demo.start(store: store); setRunning(true); stats.format = "Demo 1280×720 @ 60 Hz (Spiel: 30 FPS)"
+            audio.stop(); updateAudioDelay()
+            demo.start(store: store, audio: audioSync ? audio : nil); setRunning(true)
+            stats.format = "Demo 1280×720 @ 60 Hz (Spiel: 30 FPS) · weißes Quadrat + Piepton = Sync-Test"
             return
         }
         CaptureManager.requestAccess { [weak self] ok in
@@ -118,6 +129,7 @@ final class AppModel: ObservableObject {
                 self.setRunning(false); return
             }
             do {
+                self.updateAudioDelay()
                 try self.capture.start(videoID: self.selectedVideo,
                                        audioID: self.selectedAudio == AppModel.noAudioID ? nil : self.selectedAudio, store: self.store)
                 self.setRunning(true)
@@ -128,7 +140,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func stopSources() { demo.stop(); capture.stop() }
+    private func stopSources() { demo.stop(); capture.stop(); audio.stop() }
+
+    /// Sound delay = how long the picture is held back + manual fine tuning.
+    func updateAudioDelay() {
+        let video = renderer?.videoDelay ?? 0.05
+        let d = max(0, video + audioOffsetMs / 1000)
+        audio.delay = d
+        stats.audioDelayMs = audioSync ? d * 1000 : 0
+    }
 
     func stop() { stopSources(); setRunning(false); renderer?.reset() }
 
@@ -151,6 +171,7 @@ final class AppModel: ObservableObject {
         stats.output = renderer?.outputFPS ?? 0
         stats.gpu = renderer?.gpuMs ?? 0
         stats.dupes = store.duplicateShare
+        updateAudioDelay()
         if stats.signal == 0 && selectedVideo != AppModel.demoID {
             errorText = "Kein Signal – PS5 an? In der PS5: Einstellungen → System → HDMI → „HDCP aktivieren“ AUS."
         } else if errorText?.hasPrefix("Kein Signal") == true { errorText = nil }

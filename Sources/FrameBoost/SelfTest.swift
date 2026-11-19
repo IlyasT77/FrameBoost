@@ -129,6 +129,25 @@ enum SelfTest {
             if !dupOK { ok = false }
         }
 
+        // --- Sound buffer: sound must be played exactly `delay` after it arrived ---
+        do {
+            let player = AudioDelayPlayer()
+            let gen = SyntheticAudio()
+            player.volume = 0
+            player.delay = 0.10
+            var errs: [Double] = []
+            for i in 0..<30 {
+                if let sb = gen.next(frames: 480) { player.enqueue(sb) }      // 10 ms of sound every 10 ms
+                if i == 15 { player.delay = 0.20 }                          // change the delay while running
+                if i > 2 && i != 15 && i != 16 { errs.append(abs(player.lastError)) }
+                Thread.sleep(forTimeInterval: 0.010)
+            }
+            let worst = (errs.max() ?? 1) * 1000
+            say(String(format: "Ton-Puffer (Bild/Ton synchron): max. Abweichung %.1f ms %@", worst, worst < 15 ? "OK" : "FEHLER"))
+            if worst >= 15 { ok = false }
+            player.stop()
+        }
+
         // --- Speed ---
         say("Geschwindigkeit:")
         for (w, h) in [(1920, 1080), (2560, 1440), (3840, 2160)] {

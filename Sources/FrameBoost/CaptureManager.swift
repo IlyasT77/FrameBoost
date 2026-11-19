@@ -8,7 +8,7 @@ struct DeviceItem: Identifiable, Hashable {
 }
 
 /// Finds capture cards, opens them with the best format and plays their audio.
-final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
     static let cardKeywords = ["elgato", "game capture", "hd60", "4k60", "4k x", "4k pro", "4k s", "cam link", "avermedia", "live gamer",
                                "capture", "usb video", "uvc", "hdmi", "razer ripsaw", "genki", "shadowcast", "nzxt", "ezcap", "magewell", "acasis", "guermok"]
 
@@ -45,11 +45,16 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
     private var audioPreview: AVCaptureAudioPreviewOutput?
+    private let audioOut = AVCaptureAudioDataOutput()
+    private let audioQueue = DispatchQueue(label: "capture.audio", qos: .userInteractive)
+    /// Buffered, delayed playback (picture/sound in sync). If nil, sound plays directly without buffer.
+    weak var audioPlayer: AudioDelayPlayer?
+    var useAudioBuffer = true
     private let queue = DispatchQueue(label: "capture.video", qos: .userInteractive)
     private weak var store: FrameStore?
     private(set) var formatDescription = ""
 
-    var volume: Float = 1.0 { didSet { audioPreview?.volume = volume } }
+    var volume: Float = 1.0 { didSet { audioPreview?.volume = volume; audioPlayer?.volume = volume } }
 
     static func requestAccess(_ done: @escaping (Bool) -> Void) {
         AVCaptureDevice.requestAccess(for: .video) { v in
@@ -75,9 +80,18 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
         if let aid = audioID, let adev = AVCaptureDevice(uniqueID: aid), let ain = try? AVCaptureDeviceInput(device: adev), session.canAddInput(ain) {
             session.addInput(ain)
-            let prev = AVCaptureAudioPreviewOutput()
-            prev.volume = volume
-            if session.canAddOutput(prev) { session.addOutput(prev); audioPreview = prev }
+            if useAudioBuffer, let player = audioPlayer {
+                player.volume = volume
+                audioOut.audioSettings = [AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32,
+                                          AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false,
+                                          AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2]
+                audioOut.setSampleBufferDelegate(self, queue: audioQueue)
+                if session.canAddOutput(audioOut) { session.addOutput(audioOut) }
+            } else {
+                let prev = AVCaptureAudioPreviewOutput()
+                prev.volume = volume
+                if session.canAddOutput(prev) { session.addOutput(prev); audioPreview = prev }
+            }
         }
         session.commitConfiguration()
         queue.async { self.session.startRunning() }
@@ -90,6 +104,7 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         session.outputs.forEach { session.removeOutput($0) }
         session.commitConfiguration()
         audioPreview = nil
+        audioPlayer?.stop()
     }
 
     /// Prefer 1080p (then 1440p/4K/720p) with the highest frame rate the card offers.
@@ -126,6 +141,10 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        if output === audioOut {
+            audioPlayer?.enqueue(sampleBuffer)
+            return
+        }
         guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         store?.push(pb)
     }

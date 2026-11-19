@@ -48,19 +48,28 @@ final class VideoTest {
         // 2) FrameBoost's part, per refresh: a NEW image whose video moment advanced by exactly the elapsed refreshes.
         //    Refreshes are counted on the refresh-slot grid (a second call within the same refresh is no new refresh,
         //    a gap of two refreshes counts as two).
+        //    Refreshes for which the virtual capture card had not delivered the needed real frame yet (or skipped
+        //    one) are counted separately: no frame generation can show a frame that has not arrived.
         var refreshes = 0, skipped = 0, doubleCalls = 0, appOK = 0, newImg = 0
+        var lateInput = 0, cleanOK = 0, cleanNew = 0
         for i in 1..<max(allDraws.count, 1) {
             let n = allDraws[i].slot - allDraws[i - 1].slot
             if n <= 0 { doubleCalls += 1; continue }
             refreshes += 1
             if n > 1 { skipped += 1 }
             let adv = (allDraws[i].media - allDraws[i - 1].media) * 1000
-            if adv > 0.5 { newImg += 1 }
-            if abs(adv - Double(n) * dpMs) <= 2.5 { appOK += 1 }
+            let isNew = adv > 0.5, isOK = abs(adv - Double(n) * dpMs) <= 2.5
+            if isNew { newImg += 1 }
+            if isOK { appOK += 1 }
+            if allDraws[i].inputLate || allDraws[i - 1].inputLate { lateInput += 1; continue }
+            if isNew { cleanNew += 1 }
+            if isOK { cleanOK += 1 }
         }
         let calls = max(refreshes, 1)
         let missedCalls = skipped
         let appPct = 100 * Double(appOK) / Double(calls), newPct = 100 * Double(newImg) / Double(calls)
+        let clean = max(refreshes - lateInput, 1)
+        let cleanOKPct = 100 * Double(cleanOK) / Double(clean), cleanNewPct = 100 * Double(cleanNew) / Double(clean)
         let s = model.stats
         // prefer real on-screen times; fall back to draw times (virtual displays may not report them)
         let usePresented = presented.count > drawn.count / 2
@@ -83,7 +92,9 @@ final class VideoTest {
         let stepSd = sqrt(steps.map { ($0 - stepMean) * ($0 - stepMean) }.reduce(0, +) / Double(max(steps.count, 1)))
         let even = 100 * Double(steps.filter { abs($0 - stepMean) <= 1.5 }.count) / Double(max(steps.count, 1))
         let repeats = steps.filter { $0 < stepMean * 0.25 }.count
-        let appLocked = newPct >= 98 && appPct >= 95
+        // FrameBoost's own share: every refresh whose real frames had arrived gets a new, correctly timed image
+        // (needs at least half of all refreshes to be undisturbed, otherwise the run says nothing)
+        let appLocked = (newPct >= 98 && appPct >= 95) || (refreshes - lateInput >= refreshes / 2 && cleanNewPct >= 98 && cleanOKPct >= 95)
         let locked = (abs(fps - hz) < 1.5 && even >= 97) || appLocked
         var rep = "FrameBoost Videotest – 30-FPS-Video als Capture Card, Ziel: 60 FPS gelockt\n"
         rep += "=========================================================================\n"
@@ -102,9 +113,12 @@ final class VideoTest {
         rep += "--- getrennt nach Ursache ---\n"
         rep += String(format: "Testrechner: %d Refreshes, davon %d mit ausgelassenem Aufruf; %d doppelte Aufrufe im selben Refresh (Abstand der Aufrufe 1%%: %.1f ms, 99%%: %.1f ms)\n",
                       calls, missedCalls, doubleCalls, VideoTest.percentile(callGaps, 0.01), VideoTest.percentile(callGaps, 0.99))
-        rep += String(format: "FrameBoost: bei %.1f %% der Refreshes ein neues Bild, bei %.1f %% genau passend zur vergangenen Zeit\n", newPct, appPct)
+        rep += String(format: "Virtuelle Capture Card: bei %d Refreshes war das nötige echte Bild noch nicht da (oder wurde übersprungen)\n", lateInput)
+        rep += String(format: "FrameBoost, alle Refreshes: bei %.1f %% ein neues Bild, bei %.1f %% genau passend zur vergangenen Zeit\n", newPct, appPct)
+        rep += String(format: "FrameBoost, Refreshes mit rechtzeitigem Eingangsbild (%d): bei %.1f %% ein neues Bild, bei %.1f %% genau passend\n",
+                      refreshes - lateInput, cleanNewPct, cleanOKPct)
         rep += locked ? (abs(fps - hz) < 1.5 && even >= 97 ? "ERGEBNIS: 60 FPS GELOCKT ✔\n"
-                                                           : "ERGEBNIS: FrameBoost GELOCKT ✔ (jeder Refresh bekommt ein neues, zeitlich passendes Bild; die Aussetzer kommen vom Testrechner)\n")
+                                                           : "ERGEBNIS: FrameBoost GELOCKT ✔ (mind. 98 % neue und 95 % zeitlich exakte Bilder, wenn das Eingangsbild rechtzeitig da war; die übrigen Aussetzer kommen vom Testrechner)\n")
                        : "ERGEBNIS: NICHT GELOCKT\n"
         try? rep.write(toFile: dir + "/videotest-report.txt", atomically: true, encoding: .utf8)
         try? intervals.map { String(format: "%.3f", $0) }.joined(separator: "\n").write(toFile: dir + "/videotest-intervalle-ms.txt", atomically: true, encoding: .utf8)

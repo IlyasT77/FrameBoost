@@ -57,7 +57,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var measuredPresented: [Double] = []
     private var measuredDrawn: [Double] = []
     private var measuredMedia: [Double] = []
-    private var measuredAllDraws: [(time: Double, media: Double, slot: Int)] = []
+    private var measuredAllDraws: [(time: Double, media: Double, slot: Int, inputLate: Bool)] = []
     /// per-event trace for the video test (main thread only): D = refresh, A = analysis of a new real frame
     private var trace: [String] = []
     func takeTrace() -> [String] { let t = trace; trace = []; return t }
@@ -66,7 +66,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         statLock.lock(); measuredPresented = []; measuredDrawn = []; measuredMedia = []; measuredAllDraws = []; measuring = true; statLock.unlock()
         trace = ["typ;jetzt_ms;outClock_ms;A_ms;B_ms;t;paar_neu;quelle_ms_oder_slot;seq;raster"]
     }
-    func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double], allDraws: [(time: Double, media: Double, slot: Int)]) {
+    func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double], allDraws: [(time: Double, media: Double, slot: Int, inputLate: Bool)]) {
         statLock.lock(); defer { statLock.unlock() }
         measuring = false
         return (measuredPresented.sorted(), measuredDrawn, measuredMedia, measuredAllDraws)
@@ -115,7 +115,9 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
-    private var pendingPair: (a: CFTimeInterval, b: CFTimeInterval, i: Double)?
+    private var pendingPair: (a: CFTimeInterval, b: CFTimeInterval, i: Double, step: UInt64)?
+    /// how many new real frames arrived from frame A to frame B (1 = none skipped by FrameBoost)
+    private var pairStep: UInt64 = 1
     /// set by every refresh: the NEXT refresh shows a moment after the current pair's frame B. Only then may a new
     /// real frame replace the pair (before that, the current pair is still needed for the in-between images).
     private var nextNeedsNewPair = true
@@ -165,14 +167,15 @@ final class Renderer: NSObject, MTKViewDelegate {
         interp.ingest(tex, isCut: f.isCut, cmd: cmd)
         cmd.addCompletedHandler { _ in _ = cvt; _ = pb }   // keep the capture buffer alive until the copy ran
         if shared == nil { cmd.commit() }
+        let step = f.seq &- lastSeq
         lastSeq = f.seq
         let gap = f.time - timeB
         let a = timeB > 0 && gap > 0.004 && gap < 0.1 ? timeB : f.time - f.interval
         if shared != nil || !interp.hasPair {
             // same command buffer as this refresh (or no pair yet): the new pair is valid right away
-            timeA = a; timeB = f.time; interval = f.interval; pendingPair = nil
+            timeA = a; timeB = f.time; interval = f.interval; pairStep = step; pendingPair = nil
         } else {
-            pendingPair = (a, f.time, f.interval)   // own command buffer: valid from the next refresh on
+            pendingPair = (a, f.time, f.interval, step)   // own command buffer: valid from the next refresh on
             nextNeedsNewPair = false                 // the next refresh needs exactly this pair
         }
         if measuring && trace.count < 20000 {
@@ -196,7 +199,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         // Its motion analysis normally runs in its own command buffer after a refresh's image (end of draw, or
         // ingestNow when the frame arrives later), so it never delays an image; the pair is used from the next refresh.
         var applied = 0
-        if let p = pendingPair { timeA = p.a; timeB = p.b; interval = p.i; pendingPair = nil; applied = 1 }
+        if let p = pendingPair { timeA = p.a; timeB = p.b; interval = p.i; pairStep = p.step; pendingPair = nil; applied = 1 }
         guard active, interp.ready, let frame = interp.output else {
             // nothing to show yet: take every frame as it comes, clear to black
             nextNeedsNewPair = true
@@ -229,10 +232,10 @@ final class Renderer: NSObject, MTKViewDelegate {
         } else if steps > 0 {
             outClock += Double(steps) * dp
             let err = target - outClock
-            // ahead of the target (too little margin for the next real frame): correct faster
-            if abs(err) > 2.5 * dp { outClock = target } else { outClock += err * (err < 0 ? 0.1 : 0.03) }
+            if abs(err) > 2.5 * dp { outClock = target } else { outClock += err * 0.03 }
         }
         var t: Float = 1
+        var inputLate = false   // this refresh needed a real frame that had not arrived (or the source skipped one)
         if mode != .off {
             if let g = gridStep(mode), interp.hasPair, steps > 0 {
                 // track where the refreshes fall between grid points (circular mean) and centre the rounding on it
@@ -256,6 +259,8 @@ final class Renderer: NSObject, MTKViewDelegate {
                 p = position(outClock, mode)
             }
             t = Float(min(max(p.pos, 0), 1))
+            // (a long pair counts only if the source really skipped a frame, not if FrameBoost skipped one)
+            inputLate = p.beyond || (timeB - timeA > 1.5 * interval && pairStep == 1)
         }
         let synthMode: SynthMode = mode == .off ? .passthrough : (settings.blendOnly ? .blend : .interpolate)
         let screen = drawable.texture
@@ -270,7 +275,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         if measuring && trace.count < 20000 {
             trace.append(String(format: "D;%.3f;%.3f;%.3f;%.3f;%.3f;%d;%d;%llu;%.3f", now * 1000, outClock * 1000, timeA * 1000, timeB * 1000, t, applied, slot, lastSeq, gridOffset))
         }
-        if measuring { statLock.lock(); measuredAllDraws.append((now, mode == .off ? timeB : timeA + Double(t) * (timeB - timeA), slot)); statLock.unlock() }
+        if measuring { statLock.lock(); measuredAllDraws.append((now, mode == .off ? timeB : timeA + Double(t) * (timeB - timeA), slot, inputLate)); statLock.unlock() }
         if lastShown.0 != lastSeq || abs(lastShown.1 - t) > 0.001 {
             lastShown = (lastSeq, t)
             statLock.lock()

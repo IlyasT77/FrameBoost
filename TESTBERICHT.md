@@ -1,79 +1,82 @@
-# Testbericht FrameBoost 2.3 (19.11.2026)
+# Testbericht FrameBoost 2.4
 
-Getestet wurde automatisch auf den GitHub-Build-Servern: macOS 15 (Apple-Silicon-VM mit virtueller GPU)
-und Windows Server 2022 (ohne Grafikkarte). **Nicht getestet** werden konnte mit echter Capture Card und PS5.
-Dafür wurden ein Demo-Signal (30-FPS-Spiel in 60 Hz, wie bei der PS5) und simulierte Tonquellen verwendet.
+Alle Tests laufen bei jedem Build automatisch auf den GitHub-Servern:
+**macOS 15 auf Apple M1** (virtuelle Maschine, virtuelle GPU) und **Windows Server 2022** (4 CPU-Kerne, **keine Grafikkarte**).
+Mit echter Capture Card und PS5 konnte nicht getestet werden. Stattdessen läuft ein echtes Video als „virtuelle Capture Card“:
+genau wie bei der PS5 kommt ein 60-Hz-Signal an, in dem jedes Bild eines 30-FPS-Videos doppelt enthalten ist.
 
-## Zu den GitHub-Mails „Run failed“
+> Die Fehlernummern (#1, #2 …) sind nur eine Aufzählung – sie haben nichts mit Apple-Chips (M1, M5 …) zu tun.
 
-Die Mails kamen **nicht von Abstürzen der App**. Es waren Testläufe des Build-Servers (#14–#19, jeweils ca. 2,5 Minuten),
-die fehlgeschlagen sind, während der Ton-Puffer entwickelt wurde: Der Selbsttest hat ungenaues Ton-Timing gemeldet und den
-Lauf absichtlich rot markiert. Das ist behoben (siehe M7). Lauf #22 war ein Tippfehler im Testcode, den ich sofort korrigiert habe.
+## 1. Apple Silicon (M1–M5)
 
-## Ergebnisse
+| Prüfung | Ergebnis |
+|---|---|
+| App-Datei | Universal Binary: `x86_64 arm64` (`lipo -info`) |
+| Test-Mac | Apple M1, `arm64` – die App läuft **nativ**, ohne Rosetta |
+| M2, M3, M4, M5 | gleiche Architektur (arm64) und Metal-GPU wie M1 → unterstützt |
+| Intel-Macs | ebenfalls in der Datei enthalten |
+
+## 2. Echtes Video als Capture Card (Big Buck Bunny, 1080p)
+
+Ausgangsmaterial ist die **60-FPS-Fassung** des Films. Daraus entsteht eine 30-FPS-Fassung, indem jedes zweite Bild weggelassen wird.
+FrameBoost erzeugt aus den 30 FPS wieder 60 FPS. Die erzeugten Zwischenbilder werden mit den **echten, weggelassenen Bildern**
+verglichen. Höhere Werte sind besser.
+
+| Verfahren | PSNR (dB) | SSIM |
+|---|---|---|
+| Bild wiederholen (normale 30 FPS) | 31,7 | 0,983 |
+| Überblenden | 33,3 | 0,986 |
+| FFmpeg Motion Interpolation (langsam, nicht in Echtzeit) | 34,5 | **0,991** |
+| **FrameBoost** (Echtzeit) | **35,0** | 0,986 |
+
+FrameBoost erreicht den besten PSNR aller Verfahren. Beim SSIM (Strukturähnlichkeit) liegt die deutlich langsamere
+FFmpeg-Methode knapp vorne. Das Vergleichsvideo `vergleich_30_vs_60fps.mp4` zeigt beides nebeneinander.
+
+**60-FPS-Lock im laufenden Programm (Mac, Modus 2×, 60-Hz-Bildschirm):** VIDEOTEST_ERGEBNIS
+
+## 3. Weitere Ergebnisse
 
 | Test | macOS | Windows |
 |---|---|---|
-| Build | ✅ DMG (Universal: Apple Silicon + Intel) | ✅ FrameBoost.exe |
-| Selbsttest (Qualität, Duplikate, Szenenwechsel, Ton-Puffer) | ✅ bestanden | ✅ bestanden (auch als EXE) |
-| Bildqualität normal / schnelle Bewegung (PSNR, höher = besser) | 34,7 / 26,8 dB (Überblenden: 19,7 / 17,7) | 30,9 / 28,4 dB (Überblenden: 18,9 / 16,4) |
-| Ton-Puffer: Ziel 60 / 120 ms | 57,4 / 117,8 ms ✅ | 57,4 / 117,9 ms ✅ |
-| **Dauertest** (alle Funktionen in Schleife) | ✅ **10 min, 240 Aktionen, 0 Abstürze**, Speicher 57 → 59 MB | ✅ **5 min, 120 Aktionen, 0 Abstürze**, Speicher sinkt |
-| Bildausgabe eingefroren | 0 × | – |
-| 1080p, 180 FPS möglich | ✅ (Analyse 13 ms, Zwischenbild 2,2 ms) | auf dem Server ohne Grafikkarte nein (siehe W5) |
+| Build | ✅ DMG, 3 MB | ✅ EXE, 64 MB (vorher 100 MB) |
+| Selbsttest: Bildqualität Demo (PSNR, normal / schnelle Bewegung) | ✅ 34,7 / 26,8 dB | ✅ 30,9 / 28,2 dB |
+| Ton-Puffer: Ziel 60 / 120 ms | ✅ 57,4 / 117,8 ms | ✅ 57,4 / 117,9 ms |
+| Duplikate / Szenenwechsel / ruhige Szene (1-Pixel-Bewegung) | ✅ / ✅ / ✅ | ✅ / ✅ / ✅ |
+| Regressionstests (Start/Stop-Stress, Threads, Auflösungswechsel, Puffer-Grenzfälle) | ✅ alle | – |
+| **Dauertest** (alle Funktionen in Schleife) | ✅ **10 min, 240 Aktionen, 0 Abstürze**, Speicher konstant (59 → 60 MB) | ✅ **5 min, 120 Aktionen, 0 Abstürze** |
+| Geschwindigkeit 1080p | ✅ Analyse 13 ms, Zwischenbild 2 ms → bis 180 FPS | Server ohne Grafikkarte: Analyse 15–30 ms, Zwischenbild 15–35 ms |
 
-Der Dauertest klickt automatisch Folgendes durch, immer wieder für 10 Minuten:
-- Start / Stop, auch schnell hintereinander
-- alle Modi (Aus, Auto, 2×–6×) und beide Qualitätsstufen
-- Schärfen, Duplikate, Vergleichsmodus und FPS-Anzeige
-- Ton-Puffer an/aus, Ton-Verschiebung und Lautstärke
-- Gerätesuche, Vollbild an/aus und verschiedene Fenstergrößen
+## 4. Gefundene und behobene Fehler
 
-Alle 5 Sekunden werden Speicher, FPS und Fehler gemessen. Die Berichte liegen in `docs/dauertest-mac.txt` und `docs/dauertest-windows.txt`.
+| # | System | Art | Problem | Lösung |
+|---|---|---|---|---|
+| #1 | Mac | Absturzrisiko | Capture Card von verschiedenen Threads gestartet/gestoppt; schnelles Start/Stop konnte abstürzen | Alle Capture-Befehle auf einer festen Warteschlange |
+| #2 | Mac | Absturzrisiko | Ton-Engine konnte gleichzeitig gestoppt und gestartet werden | Sperre im Ton-Player · Test: 60× Start/Stop ✅ |
+| #3 | Mac | Fehler | Ton lief nach „Stop“ weiter | Ton nimmt nach Stop nichts mehr an · Test ✅ |
+| #4 | Mac | Fehler | Späte Kamera-Freigabe startete die Karte nach „Stop“ neu | Veraltete Antworten werden ignoriert |
+| #5 | Mac | Absturzrisiko | Demo-Signal: Start/Stop nicht synchronisiert | Synchronisiert · Test: 40× Start/Stop ✅ |
+| #6 | Mac | Speicher | GPU-Texturcache wurde nie geleert | Regelmäßig geleert · Dauertest: Speicher konstant |
+| #7 | beide | Ton | Erster Ton-Puffer: Zeitbasis blieb stehen | Ringpuffer mit Drift-Korrektur, ±3 ms |
+| #8 | Mac | Bild | Fahrbahnmarkierungen (Wiederholmuster) falsch berechnet | Kleinere Bewegung wird bevorzugt |
+| #9 | Mac | Bild | Fehler am Bildrand bei Kameraschwenks | Randinhalt aus dem passenden Bild |
+| #10 | Mac | Anzeige | Max. 120 FPS | Bis 240 Hz, 6×-Modus, 1:1 auf 1080p |
+| #11 | Mac | Test | Dauertest startete ohne Fenster | Ordner als benannte Option |
+| #12 | beide | **Bild** | **Echtes Video: ruhige Szenen wurden als „doppelte Bilder“ verworfen** (nur 8 statt 30 echte Bilder/s) – gefunden durch den Filmtest | Feinere Erkennung (Flächenmittel, 144 Bildbereiche) · jetzt 30,0 echte Bilder/s ✅ |
+| #13 | beide | Bild | Videoquelle blieb hängen, wenn das Dekodieren langsamer als Echtzeit war | Springt nach vorn statt zu blockieren |
+| #14 | Mac | Takt | Zwischenbild-Zeitpunkt hing an der Uhrzeit des Zeichenaufrufs → gelegentlich doppelte Bilder | Bildschirm-synchrone Ausgabeuhr |
+| #15 | Mac | Takt | Bewegungsanalyse im selben GPU-Auftrag wie die Anzeige → verpasste Bildwechsel auf langsamen GPUs | Analyse läuft nach der Anzeige |
+| #16 | Windows | Bild | Auf langsamen PCs keine Zwischenbilder | Zwischenbilder ab Ende der Analyse |
+| #17 | Windows | Leistung | Analyse zu langsam | Feste Analysegröße + Qualitätsstufe „Auto“ (34 → 59 FPS auf schwacher CPU) |
+| #18 | Windows | Meldung | Kryptische Meldung ohne Lautsprecher | Verständlicher Text |
+| #19 | Windows | Größe | EXE 100 MB | 64 MB (nur benötigte Bibliotheken) |
 
-## Gefundene und behobene Fehler
+## 5. Bekannte Grenzen
 
-### macOS
-| # | Art | Problem | Lösung |
-|---|---|---|---|
-| M1 | Absturzrisiko | Capture Card wurde von verschiedenen Threads gestartet und gestoppt; schnelles Start/Stop konnte eine Exception auslösen | Alle Capture-Befehle laufen auf einer festen Warteschlange (Apple-Vorgabe) |
-| M2 | Absturzrisiko | Die Ton-Engine konnte gleichzeitig von zwei Threads gestoppt und gestartet werden | Lebenszyklus-Sperre im Ton-Player |
-| M3 | Fehler | Ton lief nach „Stop“ kurz weiter bzw. startete wieder | Ton nimmt nach Stop nichts mehr an |
-| M4 | Fehler | Eine späte Antwort der Kamera-Freigabe konnte die Karte nach „Stop“ wieder starten | Start-Zähler: veraltete Antworten werden ignoriert |
-| M5 | Absturzrisiko | Demo-Signal: Start/Stop nicht synchronisiert | Start/Stop auf derselben Warteschlange wie das Signal |
-| M6 | Speicher | GPU-Texturcache wurde nie geleert | Cache wird regelmäßig geleert; Dauertest: 0,2 MB/min |
-| M7 | Ton | Erster Ton-Puffer (Apple-Synchronizer) – Zeitbasis blieb stehen | Ersetzt durch Ringpuffer mit Drift-Korrektur, Genauigkeit ±3 ms |
-| M8 | Bild | Fahrbahnmarkierungen (sich wiederholende Muster) wurden falsch berechnet | Kleinere Bewegungen werden bei gleicher Übereinstimmung bevorzugt |
-| M9 | Bild | Fehler am Bildrand bei Kameraschwenks | Inhalte vom Bildrand kommen aus dem Bild, in dem sie existieren |
-| M10 | Anzeige | Maximal 120 FPS – 180-Hz-Monitore wurden nicht ausgenutzt | Bis 240 Hz, neuer 6×-Modus, 1:1-Ausgabe auf 1080p-Monitoren |
-| M11 | Test | Dauertest startete ohne Fenster (Ordner als Pfad übergeben → macOS hielt ihn für eine zu öffnende Datei) | Ordner als benannte Option |
-
-### Windows
-| # | Art | Problem | Lösung |
-|---|---|---|---|
-| W1 | Bild | Auf langsamen PCs, deren Bewegungsanalyse länger als ein Bild dauert, entstanden nie Zwischenbilder | Zwischenbilder laufen ab dem Ende der Analyse |
-| W2 | Leistung | Analyse bei 1080p zu langsam | Feste Analysebreite (1080p kostet so viel wie 720p) |
-| W3 | Anzeige | FPS-Anzeige abgeschnitten | Box passt sich dem Text an |
-| W4 | Meldung | Ohne Lautsprecher kryptische Fehlermeldung | Verständliche Meldung, Bild läuft weiter |
-
-## Neu für Fehlersuche
-- **Protokoll-Datei**: Mac `~/Library/Logs/FrameBoost/frameboost.log`, Windows `%LOCALAPPDATA%\FrameBoost\frameboost.log`
-- **Absturz-Erkennung**: Nach einem Absturz fragt FrameBoost beim nächsten Start, ob ein Fehlerbericht erstellt werden soll
-- **Fehlerbericht** (Mac: *Hilfe*, Windows: *Einstellungen*). Er enthält:
-  - System, Grafikkarte, Bildschirme und Geräte
-  - Einstellungen und Messwerte
-  - den letzten Absturz und das Protokoll
-
-  Die Datei landet auf dem Schreibtisch, außerdem öffnet sich die GitHub-Seite für ein Issue.
-
-## Bekannte Grenzen / offen
-- **Mit echter Capture Card + PS5 noch nicht getestet.**
-- W5: Auf dem Windows-Server **ohne Grafikkarte** dauert ein Zwischenbild bei 1080p ca. 28–37 ms (nur CPU), also unter 60 FPS.
-  Auf einem PC mit Grafikkarte nutzt FrameBoost OpenCL und ist deutlich schneller. Reicht die Leistung nicht, erzeugt FrameBoost
-  automatisch weniger Zwischenbilder statt zu ruckeln. Die tatsächliche Leistung zeigt die FPS-Anzeige.
-- Windows: Die OpenGL-Anzeige (vsync) konnte auf dem Server ohne Grafikkarte nicht geprüft werden, dort lief der Kompatibilitätsmodus.
-  Falls das Bild bei dir schwarz bleibt: *Einstellungen → Kompatibilitätsmodus* aktivieren.
-- Windows-EXE ist ca. 100 MB groß und braucht beim Start ein paar Sekunden (sie entpackt sich).
-- Nicht signiert: Mac-Gatekeeper- bzw. Windows-SmartScreen-Warnung beim ersten Start.
-- HDR wird nicht unterstützt (PS5 auf SDR stellen).
-- Etwa ein echtes Bild (≈ 33 ms) zusätzliche Verzögerung – prinzipbedingt bei jeder Frame Generation.
+- **Echte Capture Card + PS5 noch nicht getestet** (keine Hardware im Testserver).
+- **Windows-Leistung:** Der Windows-Testserver hat keine Grafikkarte. Dort erreicht der Filmtest keine 60 FPS, weil Dekodieren,
+  Analyse und Zwischenbilder alle auf 4 CPU-Kernen laufen. Auf einem PC mit Grafikkarte nutzt FrameBoost OpenCL, und eine
+  Capture Card liefert das Bild ohne Dekodieraufwand. Die tatsächliche Leistung zeigt die FPS-Anzeige.
+  Bei Bedarf in den Einstellungen „Schnell“ wählen.
+- Mac-Testserver: virtuelle GPU, deutlich langsamer als ein echter M-Chip; Anzeigezeitpunkte meldet sie nicht, gemessen wird daher am Zeichenzeitpunkt.
+- Nicht signiert: Gatekeeper-/SmartScreen-Hinweis beim ersten Start. HDR wird nicht unterstützt.
+- Verzögerung: etwa ein echtes Bild + ein Bildschirm-Refresh (≈ 50 ms bei 30 FPS / 60 Hz). Der Ton wird automatisch angeglichen.

@@ -26,7 +26,7 @@ final class AppModel: ObservableObject {
     @Published var errorText: String?
     @Published var stats = Stats()
 
-    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, audioDelayMs = 0.0, format = "" }
+    struct Stats { var signal = 0.0, game = 0.0, output = 0.0, gpu = 0.0, dupes = 0.0, audioDelayMs = 0.0, outputLatencyMs = 0.0, format = "" }
 
     let store = FrameStore()
     let settings = RenderSettings()
@@ -146,8 +146,9 @@ final class AppModel: ObservableObject {
     func updateAudioDelay() {
         let video = renderer?.videoDelay ?? 0.05
         let d = max(0, video + audioOffsetMs / 1000)
-        audio.delay = d
-        stats.audioDelayMs = audioSync ? d * 1000 : 0
+        audio.delay = d                       // re-timed only if it changes by more than 8 ms
+        stats.audioDelayMs = audioSync ? audio.delay * 1000 : 0
+        stats.outputLatencyMs = audio.outputLatency * 1000
     }
 
     func stop() { stopSources(); setRunning(false); renderer?.reset() }

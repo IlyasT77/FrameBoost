@@ -157,6 +157,10 @@ struct SettingsView: View {
                     Text(String(format: "Ton wird um %.0f ms verzögert (automatisch %@ %.0f ms)", model.stats.audioDelayMs,
                                 model.audioOffsetMs >= 0 ? "+" : "−", abs(model.audioOffsetMs)))
                         .font(.caption).foregroundStyle(.secondary)
+                    if model.stats.outputLatencyMs > model.stats.audioDelayMs + 20 {
+                        Text(String(format: "Hinweis: Deine Kopfhörer/Lautsprecher haben %.0f ms eigene Verzögerung (z. B. Bluetooth). Mit Kabel oder Mac-Lautsprechern wird es synchron.", model.stats.outputLatencyMs))
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     Text("Test: Demo-Signal starten – weißes Quadrat und Piepton müssen gleichzeitig kommen.")
                         .font(.caption).foregroundStyle(.secondary)
                 }

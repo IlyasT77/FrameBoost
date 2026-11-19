@@ -61,11 +61,15 @@ jobs:
         run: |
           mkdir -p ci-output
           hdiutil attach build/FrameBoost.dmg -noautoopen
-          open /Volumes/FrameBoost
-          sleep 5
-          osascript -e 'tell application "Finder" to activate' || true
-          sleep 2
+          sleep 3
+          osascript -e 'tell application "Finder"' -e 'activate' -e 'open disk "FrameBoost"' -e 'end tell' || open /Volumes/FrameBoost
+          sleep 12
           screencapture -x ci-output/dmg_installer.png || true
+          osascript -e 'tell application "Finder" to close every window' || true
+          sleep 2
+          osascript -e 'tell application "Finder"' -e 'open disk "FrameBoost"' -e 'end tell' || true
+          sleep 10
+          screencapture -x ci-output/dmg_installer2.png || true
           hdiutil detach /Volumes/FrameBoost -force || true
       - name: Publish results to ci-output branch
         if: always()

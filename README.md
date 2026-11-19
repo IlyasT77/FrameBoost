@@ -1,47 +1,87 @@
-# FrameBoost – PS5 30 FPS → 60/120 FPS per Capture Card (macOS)
+# FrameBoost
 
-Native Mac-App (Swift + Metal) mit **eigener Frame Generation**, kein Lossless Scaling nötig.
+**Frame Generation für Konsolen über eine Capture Card.** Aus 30 FPS werden 60, 120 oder 180 FPS – für macOS und Windows.
 
-**Download:** [Releases → FrameBoost.dmg](../../releases/latest)
+Die PS5 (oder jede andere Konsole) läuft über eine Capture Card in den Computer. FrameBoost erkennt die Karte automatisch,
+berechnet zwischen zwei echten Bildern neue Zwischenbilder und zeigt sie in der Bildwiederholrate deines Bildschirms an.
+Der Ton wird so verzögert, dass Bild und Ton synchron bleiben.
 
-## Installieren
-1. DMG öffnen, **FrameBoost** in **Programme** ziehen.
-2. Erster Start: **Rechtsklick → Öffnen → Öffnen** (App ist nicht bei Apple notarisiert).
-   Erscheint „beschädigt“: Terminal → `xattr -cr /Applications/FrameBoost.app`
-3. Kamera- und Mikrofon-Zugriff erlauben (das ist die Capture Card).
+![FrameBoost auf dem Mac](docs/mac-app.png)
 
-## PS5 vorbereiten
-- Einstellungen → System → HDMI → **„HDCP aktivieren“ AUS** (sonst schwarzes Bild)
-- Einstellungen → Bildschirm und Video → **HDR aus** (Capture Cards zeigen HDR meist blass)
-- OBS, QuickTime und Elgato-Software schließen (sonst ist die Karte belegt)
+## Download
+
+| System | Datei | Voraussetzungen |
+|---|---|---|
+| macOS | [FrameBoost.dmg](../../releases/latest) | macOS 14 oder neuer, Apple Silicon oder Intel |
+| Windows | [FrameBoost.exe](../../releases/latest) | Windows 10/11 (64 Bit) |
+
+**Erster Start auf dem Mac:** Die App ist (noch) nicht bei Apple notarisiert. Rechtsklick auf FrameBoost → *Öffnen* → *Öffnen*.
+**Erster Start unter Windows:** Bei der SmartScreen-Warnung auf *Weitere Informationen* → *Trotzdem ausführen* klicken.
+
+## Einrichtung
+
+1. Konsole → HDMI → Capture Card → USB 3.0 am Computer.
+2. PS5: *Einstellungen → System → HDMI → „HDCP aktivieren“* **aus** (sonst bleibt das Bild schwarz).
+3. PS5: Videoausgabe **1080p**, **HDR aus**.
+4. OBS, QuickTime, Kamera-Apps und Hersteller-Software schließen – sonst ist die Karte belegt.
+5. FrameBoost starten. Die Capture Card wird erkannt und startet automatisch, inklusive Ton.
+
+**Günstige Karten:** USB-3.0-Sticks mit dem Chip **MS2130** (ca. 15–35 €) liefern 1080p mit 60 Hz ohne Komprimierung und reichen völlig.
+Teurere Karten (Elgato, AVerMedia) funktionieren ebenfalls.
 
 ## Bedienung
-Capture Card einstecken → wird automatisch erkannt und gestartet (inkl. Ton).
 
-| Taste | Funktion |
-|---|---|
-| ⌃⌘F | Vollbild |
-| ⌘0 / ⌘1 / ⌘2 / ⌘3 / ⌘4 / ⌘6 | Frame Gen Aus / Auto / 2× / 3× / 4× / 6× |
-| ⌘I | FPS-Anzeige |
-| ⇧⌘S | Start / Stop |
+| Mac | Windows | Funktion |
+|---|---|---|
+| ⌃⌘F | F11 | Vollbild |
+| ⌘0 · ⌘1 · ⌘2 · ⌘3 · ⌘4 · ⌘6 | Strg+0 · 1 · 2 · 3 · 4 · 6 | Frame Generation Aus · Auto · 2× · 3× · 4× · 6× |
+| ⌘I | Strg+I | FPS-Anzeige |
+| ⇧⌘S | Strg+Umschalt+S | Start / Stop |
+| ⌘, | Einstellungen | Einstellungen |
 
-**Auto** = so viele Bilder wie dein Bildschirm kann (60 Hz → 60 FPS, 120 Hz → 120 FPS, 180 Hz → 180 FPS).
-Auf einem 180-Hz-Monitor laufen Auto (180), 3× (90) und 2× (60) besonders gleichmäßig.
+**Auto** erzeugt so viele Bilder, wie dein Bildschirm darstellen kann: 60 Hz → 60 FPS, 120 Hz → 120 FPS, 180 Hz → 180 FPS.
+Auf 180-Hz-Monitoren laufen *Auto*, *3×* und *2×* besonders gleichmäßig. Ein 1080p-Bild auf einem 1080p-Monitor wird im Vollbild 1:1 angezeigt.
 
-**Ton:** läuft durch einen Puffer und wird genau so lange verzögert wie das Bild (Bild und Ton synchron).
-Feinabstimmung in den Einstellungen; Test: Demo-Signal → weißes Quadrat und Piepton kommen gleichzeitig.
+**Ton-Sync testen:** Demo-Signal starten – einmal pro Sekunde erscheint ein weißes Quadrat zusammen mit einem Piepton.
+Beides muss gleichzeitig kommen; sonst in den Einstellungen unter *Ton → Feinabstimmung* nachregeln.
 
-**1080p-Monitor:** 1080p-Capture im Vollbild wird 1:1 angezeigt, ohne Skalierung.
+## So funktioniert es
 
-## So funktioniert die Frame Generation
-1. **Doppelte Frames entfernen:** Die PS5 sendet immer 60 Hz; bei 30 FPS ist jedes Bild doppelt. FrameBoost erkennt das (Schwelle passt sich dem Rauschen der Karte an) und arbeitet mit den echten Bildern.
-2. **Bewegungsanalyse auf der GPU** in 4 Stufen (1/8 → 1/4 → 1/2 Auflösung), vorwärts und rückwärts, 16-px-Raster mit Sub-Pixel-Genauigkeit (über 1080p automatisch 32 px, damit es flüssig bleibt), plus Vorhersage aus dem letzten Bildpaar für schnelle Kameraschwenks.
-3. **Bildsynthese bei jedem Bildschirm-Refresh:** Pro Pixel werden 9 Bewegungskandidaten verglichen und der passendste gewählt. Das gibt saubere Kanten an Autos und Figuren. Verdeckte Bereiche werden erkannt, HUD/Minimap bleiben stehen.
-4. **Szenenwechsel** (Menü, Kameraschnitt) werden erkannt; dort wird nicht gemorpht.
-5. Ausgabe skaliert auf Fenster/Vollbild, mit optionalem Nachschärfen.
+1. **Doppelte Bilder entfernen.** Die PS5 sendet immer 60 Hz. Bei einem 30-FPS-Spiel ist jedes Bild doppelt.
+   FrameBoost erkennt Wiederholungen (die Schwelle passt sich dem Rauschen der Karte an) und arbeitet nur mit den echten Bildern.
+2. **Bewegung messen.** Zwischen den zwei letzten echten Bildern wird für jeden Bildbereich die Bewegung bestimmt – in beide Richtungen.
+   - *Mac:* eigene Block-Matching-Pipeline in Metal (1/16 → 1/8 → 1/4 → 1/2 Auflösung, Sub-Pixel-Genauigkeit, Vorhersage aus dem letzten Bildpaar).
+   - *Windows:* dichter optischer Fluss (DIS) auf einem eigenen Thread.
+3. **Zwischenbild erzeugen.** Bei jedem Bildschirm-Refresh wird genau der passende Zeitpunkt zwischen den beiden Bildern berechnet.
+   Auf dem Mac wählt die GPU pro Pixel die beste von neun Bewegungen aus, was saubere Kanten ergibt. Verdeckte Bereiche und Bildränder werden gesondert behandelt.
+4. **Szenenwechsel** (Menü, Kameraschnitt) werden erkannt – dort wird nicht gemorpht.
+5. **Ton-Puffer.** Der Ton läuft durch einen Ringpuffer und wird genau um die Bildverzögerung verschoben.
 
-Verzögerung: etwa ein echtes Bild (≈33 ms bei 30 FPS). Das ist bei jeder Frame Generation so.
+Die zusätzliche Verzögerung beträgt etwa ein echtes Bild (≈ 33 ms bei 30 FPS) – das ist bei jeder Frame Generation so.
+
+![Vergleich: Überblenden vs. FrameBoost](docs/vergleich.png)
+
+## Probleme melden
+
+Am einfachsten über den eingebauten Bericht:
+**Mac:** *Hilfe → Fehlerbericht erstellen …* · **Windows:** *Einstellungen → Fehlerbericht erstellen*.
+Die Datei landet auf dem Schreibtisch; dann ein [Issue](../../issues/new/choose) erstellen und sie anhängen.
+Nach einem Absturz bietet FrameBoost den Bericht beim nächsten Start automatisch an.
 
 ## Selbst bauen
-`./scripts/build_dmg.sh` (macOS 14+, Xcode Command Line Tools) → `build/FrameBoost.dmg`
-Selbsttest: `FrameBoost.app/Contents/MacOS/FrameBoost --selftest out/`
+
+**macOS** (Xcode Command Line Tools): `./scripts/build_dmg.sh` → `build/FrameBoost.dmg`
+Selbsttest: `FrameBoost.app/Contents/MacOS/FrameBoost --selftest ordner/` · Dauertest: `--soak 600 ordner/`
+
+**Windows** (Python 3.12): `cd windows && pip install -r requirements.txt && python main.py`
+EXE: siehe `.github/workflows/windows.yml` (PyInstaller) · Selbsttest: `python main.py --selftest ordner`
+
+Jeder Push baut beide Versionen automatisch, führt Selbsttest und Dauertest aus und legt die Dateien unter *Releases* ab.
+
+---
+
+### English
+
+FrameBoost turns a console's 30 FPS capture card signal into 60/120/180 FPS using its own motion-compensated frame generation
+(Metal on macOS, OpenCV on Windows), keeps audio in sync with a delay buffer and detects capture cards automatically.
+Download the DMG / EXE from *Releases*. PS5: disable HDCP, set 1080p and turn HDR off.

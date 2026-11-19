@@ -105,9 +105,16 @@ final class VideoFileSource {
     /// one tick of the virtual 60 Hz HDMI signal
     private func tick() {
         guard timer != nil, let store = store else { return }
-        let mediaTime = CACurrentMediaTime() - startTime
-        // advance to the newest frame whose time has come
-        while true {
+        var mediaTime = CACurrentMediaTime() - startTime
+        // decoder slower than real time (very large videos): skip ahead instead of blocking the signal
+        if currentPTS >= 0, mediaTime - currentPTS > 0.15 {
+            startTime += mediaTime - currentPTS - 1 / max(nominalFPS, 1)
+            mediaTime = CACurrentMediaTime() - startTime
+        }
+        // advance to the newest frame whose time has come (at most 3 decodes per tick)
+        var reads = 0
+        while reads < 3 {
+            reads += 1
             if nextFrame == nil { nextFrame = readNext() }
             if nextFrame == nil {
                 // end of file -> loop

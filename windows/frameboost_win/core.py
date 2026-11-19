@@ -172,8 +172,12 @@ class Interpolator:
             self._ugrid = cv2.UMat(self._grid) if self.use_ocl else None
         sw = min(w, self.work_width)
         sh = max(32, round(h * sw / w))
-        ga = cv2.cvtColor(cv2.resize(a, (sw, sh), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        # the small grey copy of A was already made when A arrived - reuse it
+        prev_small = getattr(self, "_small", None)
+        ga = prev_small[1] if prev_small is not None and prev_small[0] is a and prev_small[1].shape == (sh, sw) else \
+            cv2.cvtColor(cv2.resize(a, (sw, sh), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
         gb = cv2.cvtColor(cv2.resize(frame, (sw, sh), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        self._small = (frame, gb)
         k = np.float32(w / sw)
         st.f01 = cv2.resize(self.dis.calc(ga, gb, None), (w, h)) * k
         st.f10 = cv2.resize(self.dis.calc(gb, ga, None), (w, h)) * k

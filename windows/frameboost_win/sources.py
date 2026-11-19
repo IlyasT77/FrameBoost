@@ -282,7 +282,13 @@ class VideoFileSource:
         frame = self.first
         while self.running:
             want = int((now() - t0) * self.fps)
-            while shown < want and self.running:
+            if want - shown > 3:
+                # decoding is slower than real time: skip the backlog instead of blocking the signal
+                t0 += (want - shown - 1) / self.fps
+                want = shown + 1
+            reads = 0
+            while shown < want and self.running and reads < 2:
+                reads += 1
                 ok, f = self.cap.read()
                 if not ok or f is None:      # end -> loop
                     self.cap.set(cv2.CAP_PROP_POS_MSEC, self.start_seconds * 1000)

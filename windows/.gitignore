@@ -1,6 +1,5 @@
 build/
 dist/
-*.spec
 __pycache__/
 icon.ico
 icon.png

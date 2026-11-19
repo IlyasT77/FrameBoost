@@ -225,3 +225,86 @@ class DemoSource:
         self.running = False
         if self.thread is not None:
             self.thread.join(timeout=2)
+
+
+class VideoFileSource:
+    """A video file as virtual capture card: real-time playback as a 60 Hz signal
+    (a 30 FPS video repeats every frame twice - like a PS5 with a 30 FPS game). Loops at the end."""
+    SIGNAL_HZ = 60.0
+
+    def __init__(self, path: str, store: FrameStore, start_seconds: float = 0.0):
+        self.path, self.store, self.start_seconds = path, store, start_seconds
+        self.cap = None
+        self.fps = 30.0
+        self.running = False
+        self.thread = None
+        self.format = ""
+        self.error = ""
+
+    def _open_cap(self):
+        for api in ((cv2.CAP_MSMF,) if sys.platform.startswith("win") else ()) + (cv2.CAP_ANY,):
+            cap = cv2.VideoCapture(self.path, api)
+            if cap.isOpened():
+                return cap
+            cap.release()
+        return None
+
+    def open(self) -> bool:
+        cap = self._open_cap()
+        if cap is None:
+            self.error = "Die Videodatei lässt sich nicht öffnen."
+            return False
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        self.fps = fps if 1 <= fps <= 240 else 30.0
+        if self.start_seconds > 0:
+            cap.set(cv2.CAP_PROP_POS_MSEC, self.start_seconds * 1000)
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            cap.release()
+            self.error = "Die Videodatei enthält kein lesbares Bild."
+            return False
+        self.first = frame
+        self.cap = cap
+        import os
+        self.format = f"Video {frame.shape[1]}×{frame.shape[0]} · {self.fps:.0f} FPS → 60-Hz-Signal ({os.path.basename(self.path)})"
+        return True
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._loop, name="videofile", daemon=True)
+        self.thread.start()
+
+    def _loop(self):
+        period = 1 / self.SIGNAL_HZ
+        t0 = now()
+        t_next = t0
+        shown = 0                # index of the source frame currently on the "HDMI cable"
+        frame = self.first
+        while self.running:
+            want = int((now() - t0) * self.fps)
+            while shown < want and self.running:
+                ok, f = self.cap.read()
+                if not ok or f is None:      # end -> loop
+                    self.cap.set(cv2.CAP_PROP_POS_MSEC, self.start_seconds * 1000)
+                    ok, f = self.cap.read()
+                    if not ok:
+                        self.error = "Videodatei konnte nicht weitergelesen werden."
+                        self.running = False
+                        break
+                frame = f
+                shown += 1
+            self.store.push(frame)
+            t_next += period
+            d = t_next - now()
+            if d > 0:
+                time.sleep(d)
+            elif d < -0.1:
+                t_next = now()
+
+    def stop(self):
+        self.running = False
+        if self.thread is not None:
+            self.thread.join(timeout=2)
+        if self.cap is not None:
+            self.cap.release()
+        self.cap = None

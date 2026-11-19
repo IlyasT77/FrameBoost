@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QComboBox,
 from . import __version__, applog
 from .audio import AudioPlayer, input_devices, matching_input
 from .core import FrameStore, Interpolator, now
-from .sources import CaptureSource, DemoSource, list_video_devices
+from .sources import CaptureSource, DemoSource, VideoFileSource, list_video_devices
 
 log = applog.log
 ACCENT = "#ff4f8b"
@@ -79,6 +79,7 @@ class Engine:
         self.audio_sync = True
         self.audio_offset_ms = 0.0
         self.audio_device = None
+        self.video_start = 0.0
         self.error = ""
         self._stop = threading.Event()
         self._worker = None
@@ -99,7 +100,11 @@ class Engine:
         self._cache_key = None
         name, index = video
         self.source_name = "Demo-Signal" if index is None else name
-        if index is None:
+        if name == "file":
+            self.source_name = os.path.basename(index)
+            self.source = VideoFileSource(index, self.store, self.video_start)
+            index = None          # no capture card sound
+        elif index is None:
             self.source = DemoSource(self.store, audio_sink=self.audio.push)
         else:
             self.source = CaptureSource(index, self.store)
@@ -368,7 +373,7 @@ class SettingsDialog(QDialog):
 
         section("Frame Generation")
         self.quality = QComboBox()
-        self.quality.addItems(["Hoch", "Schnell"])
+        self.quality.addItems(["Auto", "Hoch", "Schnell"])
         self.quality.setCurrentText(e.interp.quality)
         self.quality.currentTextChanged.connect(lambda q: win.set_setting("quality", q))
         form.addRow("Qualität", self.quality)
@@ -465,7 +470,7 @@ class MainWindow(QMainWindow):
     def _apply_saved(self):
         e, s = self.engine, self.settings
         e.mode = s.value("mode", "Auto")
-        e.interp.set_quality(s.value("quality", "Hoch"))
+        e.interp.set_quality(s.value("quality", "Auto"))
         e.store.dedup = s.value("dedup", True, type=bool)
         e.audio_sync = s.value("audio_sync", True, type=bool)
         e.audio_offset_ms = float(s.value("audio_offset", 0.0))
@@ -486,7 +491,7 @@ class MainWindow(QMainWindow):
             e.update_audio_delay()
         elif key == "audio_device":
             e.audio_device = value
-            if e.running and self.current_video()[1] is not None:
+            if e.running and self.current_video()[0] not in ("demo", "file"):
                 self.start()
         elif key == "quality":
             e.interp.set_quality(value)
@@ -555,13 +560,19 @@ class MainWindow(QMainWindow):
         for name, idx, card in devs:
             self.source_combo.addItem(("● " if card else "") + name, (name, idx))
         self.source_combo.addItem("Demo-Signal (ohne Capture Card)", ("demo", None))
+        self.source_combo.addItem("Videodatei als Capture Card …", ("pick", None))
+        if cur is not None and cur[0] == "file":
+            self.source_combo.addItem("Video: " + os.path.basename(cur[1]), cur)
+            self.source_combo.setCurrentIndex(self.source_combo.count() - 1)
         remembered = self.settings.value("video", "")
         pick = next((i for i, d in enumerate(devs) if d[0] == remembered), None)
         if pick is None:
             pick = next((i for i, d in enumerate(devs) if d[2]), None)
         if cur is not None and cur[1] is not None and cur[0] in self._known_devices:
             pick = self._known_devices.index(cur[0])
-        self.source_combo.setCurrentIndex(pick if pick is not None else self.source_combo.count() - 1)
+        if not (cur is not None and cur[0] == "file"):
+            demo_idx = self.source_combo.findData(("demo", None))
+            self.source_combo.setCurrentIndex(pick if pick is not None else demo_idx)
         self.source_combo.blockSignals(False)
         if autostart and pick is not None and devs[pick][2] and not self.engine.running:
             self.start()
@@ -569,9 +580,28 @@ class MainWindow(QMainWindow):
     def current_video(self):
         return self.source_combo.currentData() if self.source_combo.count() else ("demo", None)
 
+    def choose_video_file(self, path: str | None = None):
+        from PySide6.QtWidgets import QFileDialog
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, "Video auswählen – es läuft wie eine Capture Card (60-Hz-Signal)",
+                                                  "", "Videos (*.mp4 *.mov *.mkv *.avi *.m4v)")
+        if not path:
+            self.refresh_devices()
+            return
+        data = ("file", path)
+        i = self.source_combo.findData(data)
+        if i < 0:
+            self.source_combo.addItem("Video: " + os.path.basename(path), data)
+            i = self.source_combo.count() - 1
+        self.source_combo.setCurrentIndex(i)
+        self.start()
+
     def _source_chosen(self):
+        if self.current_video() == ("pick", None):
+            self.choose_video_file()
+            return
         name, idx = self.current_video()
-        if idx is not None:
+        if idx is not None and name != "file":
             self.settings.setValue("video", name)
             m = matching_input(name, input_devices())
             if m is not None:
@@ -634,7 +664,7 @@ class MainWindow(QMainWindow):
                           "format": e.source.format if e.source else ""}
             e.update_audio_delay()
             err = (e.source.error if e.source else "") or e.audio.error
-            if not err and signal == 0 and self.current_video()[1] is not None:
+            if not err and signal == 0 and self.current_video()[0] not in ("demo", "file"):
                 err = "Kein Signal – PS5 an? In der PS5: Einstellungen → System → HDMI → „HDCP aktivieren“ aus."
             self._show_error(err)
             if self.isFullScreen() and time.time() - self._last_move > 3 and self.topbar.isVisible():
@@ -753,6 +783,47 @@ class Autopilot:
         QApplication.exit(0 if ok else 2)
 
 
+class VideoTestPilot:
+    """--videotest <video> --soak-dir <dir> [--seconds 30] [--video-start 60]:
+    a 30 FPS video runs as a virtual capture card in mode 2x; measures whether the output reaches 60 FPS evenly."""
+
+    def __init__(self, win: MainWindow, path: str, out_dir: str, seconds: float, start: float):
+        self.win, self.dir, self.seconds = win, out_dir, seconds
+        win.engine.video_start = start
+        win.set_mode("2×")
+        win.choose_video_file(path)
+        QTimer.singleShot(6000, self.begin)
+
+    def begin(self):
+        self.t0 = now()
+        QTimer.singleShot(int(self.seconds * 1000), self.finish)
+
+    def finish(self):
+        e = self.win.engine
+        t1 = now()
+        times = [t for t in e.out_times if self.t0 <= t <= t1]
+        iv = np.diff(times) * 1000 if len(times) > 1 else np.array([0.0])
+        fps = (len(times) - 1) / max(times[-1] - times[0], 1e-3) if len(times) > 1 else 0.0
+        game, signal, dupes = e.store.stats()
+        target = 1000 / 60
+        on_time = float(np.mean(np.abs(iv - target) <= 2.0) * 100)
+        hitches = int(np.sum(iv > target * 1.5))
+        locked = abs(fps - 60) < 1.5 and on_time >= 95
+        rep = ("FrameBoost (Windows) Videotest – 30-FPS-Video als Capture Card, Ziel 60 FPS\n"
+               f"{e.source.format if e.source else ''}\n"
+               f"Eingang: Signal {signal:.1f} Hz, echte Bilder {game:.1f} FPS, Duplikate {dupes * 100:.0f} %\n"
+               f"Berechnung: {e.interp.backend} · Zwischenbild {e.synth_ms:.1f} ms · Analyse {e.interp.analysis_ms:.1f} ms\n"
+               f"Ausgabe: {fps:.2f} FPS · Bildabstand Mittel {iv.mean():.2f} ms (Ziel {target:.2f}), Streuung {iv.std():.2f} ms\n"
+               f"Pünktlich (±2 ms): {on_time:.1f} % · Hänger: {hitches}\n"
+               f"ERGEBNIS: {'60 FPS GELOCKT' if locked else 'NICHT GELOCKT (Leistung dieses Rechners reicht nicht)'}\n")
+        os.makedirs(self.dir, exist_ok=True)
+        with open(os.path.join(self.dir, "videotest-report.txt"), "w", encoding="utf-8") as f:
+            f.write(rep)
+        self.win.grab().save(os.path.join(self.dir, "videotest.png"))
+        e.stop()
+        QApplication.exit(0)
+
+
 def run_app(args: list[str]) -> int:
     fmt = QSurfaceFormat()
     fmt.setSwapInterval(1)       # vsync: one image per screen refresh
@@ -769,7 +840,7 @@ def run_app(args: list[str]) -> int:
     win.show()
 
     crash = applog.take_previous_crash()
-    if crash and "--soak" not in args and "--screenshot" not in args:
+    if crash and "--soak" not in args and "--screenshot" not in args and "--videotest" not in args:
         if QMessageBox.question(win, "FrameBoost", "FrameBoost wurde beim letzten Mal unerwartet beendet.\n"
                                 "Möchtest du einen Fehlerbericht erstellen?") == QMessageBox.Yes:
             with open(applog.CRASH_FILE, "a", encoding="utf-8") as f:
@@ -785,6 +856,11 @@ def run_app(args: list[str]) -> int:
     if "--screenshot-idle" in args:
         path = args[args.index("--screenshot-idle") + 1]
         QTimer.singleShot(2500, lambda: (win.grab().save(path), app.exit(0)))
+    if "--videotest" in args:
+        def opt(name, default):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        win._videotest = VideoTestPilot(win, args[args.index("--videotest") + 1], opt("--soak-dir", "videotest-output"),
+                                        float(opt("--seconds", 30)), float(opt("--video-start", 0)))
     if "--soak" in args:
         i = args.index("--soak")
         secs = float(args[i + 1]) if i + 1 < len(args) else 180

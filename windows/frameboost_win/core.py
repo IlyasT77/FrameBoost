@@ -117,7 +117,7 @@ class Interpolator:
     each display refresh warps both frames to the exact moment t and blends them (UI thread).
     With OpenCL (most NVIDIA / AMD / Intel GPUs) the per-frame work runs on the graphics card."""
 
-    def __init__(self, quality: str = "Hoch", use_opencl: bool | None = None):
+    def __init__(self, quality: str = "Auto", use_opencl: bool | None = None):
         self.use_ocl = bool(cv2.ocl.haveOpenCL()) if use_opencl is None else use_opencl
         cv2.ocl.setUseOpenCL(self.use_ocl)
         self.set_quality(quality)
@@ -128,12 +128,29 @@ class Interpolator:
 
     @property
     def backend(self) -> str:
-        return "GPU (OpenCL)" if self.use_ocl else "CPU"
+        b = "GPU (OpenCL)" if self.use_ocl else "CPU"
+        return f"{b} · {self.level}" if self.auto else b
 
     def set_quality(self, q: str):
-        self.quality = q if q in QUALITY else "Hoch"
-        self.work_width, preset = QUALITY[self.quality]
+        """'Auto' starts with 'Hoch' and switches to 'Schnell' when the analysis cannot keep up with the game."""
+        self.auto = q not in QUALITY
+        self.quality = "Auto" if self.auto else q
+        self._apply_level("Hoch" if self.auto else q)
+
+    def _apply_level(self, level: str):
+        self.level = level
+        self.work_width, preset = QUALITY[level]
         self.dis = cv2.DISOpticalFlow_create(preset)
+        self._level_since = now()
+
+    def _adapt(self, interval: float):
+        if not self.auto or now() - self._level_since < 3.0:
+            return
+        budget = interval * 1000
+        if self.level == "Hoch" and self.analysis_ms > budget * 0.8:
+            self._apply_level("Schnell")
+        elif self.level == "Schnell" and self.analysis_ms < budget * 0.3:
+            self._apply_level("Hoch")
 
     def reset(self):
         self.state = None
@@ -168,6 +185,7 @@ class Interpolator:
         st.ready = now()      # the in-between images run from here (analysis time is part of the delay)
         self.state = st
         self.analysis_ms = self.analysis_ms * 0.8 + (now() - t0) * 1000 * 0.2
+        self._adapt(interval)
 
     def synthesize(self, st: PairState | None, t: float, mode: str = "interpolate") -> np.ndarray | None:
         """Moment t between A (0) and B (1). mode: interpolate | blend | passthrough"""

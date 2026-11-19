@@ -1,7 +1,9 @@
 name: Build Windows EXE
 on:
   push:
+    branches: [main]
     paths: ['windows/**', '.github/workflows/windows.yml']
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: write
@@ -74,11 +76,23 @@ jobs:
           git init -q; git checkout -q -b ci-output-win
           git add -A; git -c user.name=ci -c user.email=ci@localhost commit -qm "CI output $env:GITHUB_SHA"
           git push -f "https://x-access-token:${{ github.token }}@github.com/$env:GITHUB_REPOSITORY.git" ci-output-win
-      - name: Release (download link)
+      - name: Development build (every push to main)
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
+          name: Entwicklungsversion (automatisch gebaut)
+          prerelease: true
+          make_latest: false
+          files: windows/dist/FrameBoost.exe
+      - name: Official release (tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: FrameBoost ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          make_latest: true
           files: windows/dist/FrameBoost.exe
       - uses: actions/upload-artifact@v4
         with:

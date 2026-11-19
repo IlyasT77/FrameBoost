@@ -1,7 +1,9 @@
 name: Build macOS DMG
 on:
   push:
+    branches: [main]
     paths: ['Sources/**', 'scripts/**', 'Package.swift', '.github/workflows/build.yml']
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: write
@@ -161,14 +163,24 @@ jobs:
           git init -q && git checkout -q -b ci-output
           git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "CI output ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-output
-      - name: Release (download link)
+      - name: Development build (every push to main)
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: FrameBoost – neueste Version (Mac + Windows)
+          name: Entwicklungsversion (automatisch gebaut)
+          prerelease: true
+          make_latest: false
           files: build/FrameBoost.dmg
+      - name: Official release (tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: FrameBoost ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           make_latest: true
+          files: build/FrameBoost.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: FrameBoost-dmg

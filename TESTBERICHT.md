@@ -69,6 +69,11 @@ FFmpeg-Methode knapp vorne. Das Vergleichsvideo `vergleich_30_vs_60fps.mp4` zeig
 | #17 | Windows | Leistung | Analyse zu langsam | Feste Analysegröße + Qualitätsstufe „Auto“ (34 → 59 FPS auf schwacher CPU) |
 | #18 | Windows | Meldung | Kryptische Meldung ohne Lautsprecher | Verständlicher Text |
 | #19 | Windows | Größe | EXE 100 MB | 64 MB (nur benötigte Bibliotheken) |
+| #20 | Mac | Takt | Gefunden mit Bild-für-Bild-Protokoll des Videotests: die Bildschirm-Refreshes lagen genau auf der Rundungsgrenze zwischen zwei Ausgabebildern → kleinste Zeitschwankungen ergaben doppelte Bilder | Rundung wird auf die tatsächliche Lage der Refreshes zentriert (laufender Mittelwert) |
+| #21 | Mac | Takt | Ein neues echtes Bild konnte das Bildpaar ersetzen, während der nächste Refresh noch ein Zwischenbild des alten Paars brauchte | Paarwechsel erst, wenn das alte Paar fertig gezeigt ist; ein verspätetes Bild wird im selben GPU-Auftrag analysiert |
+| #22 | Mac | Takt | macOS rief das Zeichnen manchmal zweimal im selben Refresh auf → die Ausgabeuhr lief vor, Bilder fehlten | Refresh-Raster, das der Phase der Aufrufe folgt (doppelter Aufruf = kein neuer Refresh) |
+| #23 | Mac | Takt | Zwischenstand (nie veröffentlicht): nach einem ausgelassenen Bild wurde dauerhaft jedes zweite echte Bild übersprungen | Ausgaberaster in fester Zeit (1 Bildabstand ÷ Modus), nicht relativ zum Bildpaar |
+| #24 | Build | Test | Ein nicht gelockter Videotest ließ den ganzen Build scheitern (Fehler-Mails, kein neuer Download) | Ergebnis steht im Bericht, der Download wird trotzdem gebaut |
 
 ## 5. Bekannte Grenzen
 

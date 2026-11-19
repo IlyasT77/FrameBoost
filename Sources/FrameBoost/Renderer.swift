@@ -84,7 +84,8 @@ final class Renderer: NSObject, MTKViewDelegate {
     var videoDelay: Double {
         statLock.lock(); defer { statLock.unlock() }
         let p = nominalPeriod > 0 ? nominalPeriod : drawPeriod
-        let fg = settings.mode == .off ? p : interval + 1.2 * p
+        let grid = settings.mode.steps.map { gridOffset * interval / Double($0) } ?? 0
+        let fg = settings.mode == .off ? p : interval + margin(p) + grid
         return fg + 1.5 * p + _gpuMs / 1000
     }
 
@@ -98,6 +99,7 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     func reset() {
         lastSeq = 0; timeB = 0; timeA = 0; outClock = 0; lastShown = (0, -1); pendingPair = nil
+        nextNeedsNewPair = true; gridOffset = 0.5; gridVec = (0, 0)
         statLock.lock(); presentTimes.removeAll(); statLock.unlock()
         interp.reset()
     }
@@ -114,16 +116,33 @@ final class Renderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     private var pendingPair: (a: CFTimeInterval, b: CFTimeInterval, i: Double)?
+    /// set by every refresh: the NEXT refresh shows a moment after the current pair's frame B. Only then may a new
+    /// real frame replace the pair (before that, the current pair is still needed for the in-between images).
+    private var nextNeedsNewPair = true
+    /// fixed modes (2×, 3× …): where the refreshes fall between two grid points of the output, as a running circular
+    /// mean. Rounding is centred on it, so refresh timing jitter can never flip between two neighbouring images.
+    private var gridOffset: Double = 0.5
+    private var gridVec: (x: Double, y: Double) = (0, 0)
+
+    /// how far the output clock stays behind the newest real frame, on top of one frame interval
+    private func margin(_ dp: Double) -> Double { max(1.2 * dp, 0.012) }
+
+    /// output position between frame A (0) and frame B (1) for a given phase, snapped to the mode's grid
+    private func snapped(_ phase: Double, _ mode: BoostMode) -> Double {
+        guard let m = mode.steps else { return phase }
+        return ((phase * Double(m) - gridOffset).rounded()) / Double(m)
+    }
 
     private func ingestNow() {
-        guard active, let f = store.take(after: lastSeq) else { return }
+        // a new real frame may only replace the pair once the current pair is no longer needed
+        guard active, nextNeedsNewPair || !interp.hasPair, let f = store.take(after: lastSeq) else { return }
         analyse(f, via: "I")
     }
 
     /// Encodes copy + motion analysis of a new real frame in its own command buffer (same queue = runs
     /// after this refresh's image and before the next refresh's work).
-    private func analyse(_ f: SourceFrame, via: String = "D") {
-        guard let cache = cache, let cmd = interp.queue.makeCommandBuffer() else { return }
+    private func analyse(_ f: SourceFrame, via: String = "D", into shared: MTLCommandBuffer? = nil) {
+        guard let cache = cache, let cmd = shared ?? interp.queue.makeCommandBuffer() else { return }
         var cvTex: CVMetalTexture?
         let pb = f.buffer
         let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb)
@@ -131,12 +150,17 @@ final class Renderer: NSObject, MTKViewDelegate {
               let cvt = cvTex, let tex = CVMetalTextureGetTexture(cvt) else { return }
         interp.ingest(tex, isCut: f.isCut, cmd: cmd)
         cmd.addCompletedHandler { _ in _ = cvt; _ = pb }   // keep the capture buffer alive until the copy ran
-        cmd.commit()
+        if shared == nil { cmd.commit() }
         lastSeq = f.seq
         let gap = f.time - timeB
         let a = timeB > 0 && gap > 0.004 && gap < 0.1 ? timeB : f.time - f.interval
-        pendingPair = (a, f.time, f.interval)
-        if !interp.hasPair { timeA = a; timeB = f.time; interval = f.interval; pendingPair = nil }
+        if shared != nil || !interp.hasPair {
+            // same command buffer as this refresh (or no pair yet): the new pair is valid right away
+            timeA = a; timeB = f.time; interval = f.interval; pendingPair = nil
+        } else {
+            pendingPair = (a, f.time, f.interval)   // own command buffer: valid from the next refresh on
+            nextNeedsNewPair = false                 // the next refresh needs exactly this pair
+        }
         if measuring && trace.count < 20000 {
             trace.append(String(format: "A%@;%.3f;%.3f;%.3f;%.3f;;;%.3f;%llu", via, CACurrentMediaTime() * 1000, outClock * 1000,
                                 a * 1000, f.time * 1000, f.arrival * 1000, f.seq))
@@ -154,16 +178,15 @@ final class Renderer: NSObject, MTKViewDelegate {
         lastDraw = now
         framesSinceFlush += 1
         if framesSinceFlush >= 120, let cache = cache { CVMetalTextureCacheFlush(cache, 0); framesSinceFlush = 0 }  // no growth over long sessions
-        // The motion analysis of a new real frame is encoded AFTER this refresh's image (see the end of draw):
-        // the image goes out without waiting for the analysis, which then uses the free GPU time until the
-        // next refresh. The new pair is therefore used from the next refresh on (the output clock is that
-        // one refresh further behind).
+        // A new real frame replaces the pair only once the current pair is no longer needed (nextNeedsNewPair).
+        // Its motion analysis normally runs in its own command buffer after a refresh's image (end of draw, or
+        // ingestNow when the frame arrives later), so it never delays an image; the pair is used from the next refresh.
         var applied = 0
         if let p = pendingPair { timeA = p.a; timeB = p.b; interval = p.i; pendingPair = nil; applied = 1 }
-        let newFrame = active ? store.take(after: lastSeq) : nil
-        defer { if let f = newFrame { analyse(f, via: "D") } }
         guard active, interp.ready, let frame = interp.output else {
-            // nothing to show: clear to black
+            // nothing to show yet: take every frame as it comes, clear to black
+            nextNeedsNewPair = true
+            if active, let f = store.take(after: lastSeq) { analyse(f, via: "D", into: cmd) }
             if let rpd = view.currentRenderPassDescriptor, let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) { enc.endEncoding() }
             cmd.present(drawable); cmd.commit()
             return
@@ -176,7 +199,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
         let dp = nominalPeriod > 0 ? nominalPeriod : drawPeriod
         // vsync-locked output clock, one real frame (+ a little margin) behind the signal
-        let target = now - interval - 1.2 * dp
+        let target = now - interval - margin(dp)
         if outClock == 0 || prevDraw == 0 {
             outClock = target
         } else {
@@ -187,9 +210,27 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
         var t: Float = 1
         if mode != .off {
-            let span = max(timeB - timeA, 0.004)
-            let phase = Float(min(max((outClock - timeA) / span, 0), 1))
-            if let m = mode.steps { t = min((phase * Float(m)).rounded() / Float(m), 1) } else { t = phase }
+            var phase = (outClock - timeA) / max(timeB - timeA, 0.004)
+            if let m = mode.steps, interp.hasPair {
+                // track where the refreshes fall between grid points (circular mean) and centre the rounding on it
+                let x = phase * Double(m), f = x - x.rounded(.down)
+                gridVec = (gridVec.x * 0.97 + cos(2 * .pi * f) * 0.03, gridVec.y * 0.97 + sin(2 * .pi * f) * 0.03)
+                if hypot(gridVec.x, gridVec.y) > 0.5 {
+                    let o = atan2(gridVec.y, gridVec.x) / (2 * .pi)
+                    gridOffset = o < 0 ? o + 1 : o
+                } else {
+                    gridOffset = 0.5   // refresh rate is no multiple of the frame rate: plain rounding down
+                }
+            }
+            var pos = snapped(phase, mode)
+            // this refresh needs a moment after frame B and the next real frame is already here: analyse it first,
+            // in this refresh's own command buffer (only happens when a frame came late or a refresh was skipped)
+            if pos > 1 + 1e-9, interp.hasPair, let f = store.take(after: lastSeq) {
+                analyse(f, via: "S", into: cmd)
+                phase = (outClock - timeA) / max(timeB - timeA, 0.004)
+                pos = snapped(phase, mode)
+            }
+            t = Float(min(max(pos, 0), 1))
         }
         let synthMode: SynthMode = mode == .off ? .passthrough : (settings.blendOnly ? .blend : .interpolate)
         let screen = drawable.texture
@@ -224,7 +265,13 @@ final class Renderer: NSObject, MTKViewDelegate {
             guard let self = self, ms > 0 else { return }
             self.statLock.lock(); self._gpuMs = self._gpuMs * 0.9 + ms * 0.1; self.statLock.unlock()
         }
+        // may the next real frame replace the pair? Only if the next refresh shows a moment after frame B.
+        nextNeedsNewPair = mode == .off || !interp.hasPair
+            || snapped((outClock + dp - timeA) / max(timeB - timeA, 0.004), mode) > 1 + 1e-9
         cmd.present(drawable)
         cmd.commit()
+        // the analysis of an already waiting frame goes in its own command buffer AFTER this refresh's image,
+        // so it never delays the image; the new pair is used from the next refresh on
+        if nextNeedsNewPair, let f = store.take(after: lastSeq) { analyse(f, via: "D") }
     }
 }

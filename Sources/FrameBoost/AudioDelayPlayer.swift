@@ -18,6 +18,7 @@ final class AudioDelayPlayer {
     private var lastArrival: CFTimeInterval = 0
     private var _delay: Double = 0.06
     private(set) var failed = false
+    private(set) var retimeCount = 0
 
     init() {
         sync.addRenderer(renderer)
@@ -76,6 +77,7 @@ final class AudioDelayPlayer {
         let now = CACurrentMediaTime()
         let mediaNow = CMTimeAdd(pts, CMTime(seconds: (now - arrival) - delay, preferredTimescale: 1_000_000_000))
         sync.setRate(1.0, time: mediaNow, atHostTime: CMClockGetTime(CMClockGetHostTimeClock()))
+        retimeCount += 1
     }
 
     var debugInfo: String {
@@ -119,6 +121,17 @@ final class SyntheticAudio {
 
     /// Starts a short beep at the next generated sample.
     func beep(seconds: Double = 0.04) { beepUntil = sampleIndex + Int64(seconds * Double(SyntheticAudio.rate)) }
+
+    /// Generates audio for the real time elapsed since the last call (like a real device).
+    private var lastReal: CFTimeInterval = 0
+    func nextRealtime() -> CMSampleBuffer? {
+        let now = CACurrentMediaTime()
+        if lastReal == 0 { lastReal = now - 0.01 }
+        let target = Int64((now - lastReal) * Double(SyntheticAudio.rate))
+        guard target > 0 else { return nil }
+        lastReal += Double(target) / Double(SyntheticAudio.rate)
+        return next(frames: Int(target))
+    }
 
     func next(frames: Int) -> CMSampleBuffer? {
         guard let format = format else { return nil }

@@ -138,17 +138,22 @@ enum SelfTest {
             player.delay = 0.10
             var errs: [Double] = []
             var trace: [String] = []
-            for i in 0..<40 {
-                if let sb = gen.next(frames: 480) { player.enqueue(sb) }      // 10 ms of sound every 10 ms
-                if i == 20 { player.delay = 0.20 }                          // change the delay while running
-                if i > 4 && (i < 20 || i > 22) { errs.append(abs(player.lastError)) }
-                if i % 8 == 0 { trace.append(String(format: "%d:%.1fms", i, player.lastError * 1000)) }
-                Thread.sleep(forTimeInterval: 0.010)
+            let t0 = CACurrentMediaTime()
+            var i = 0
+            while CACurrentMediaTime() - t0 < 0.8 {             // 0.8 s of sound, delivered in real time like a capture card
+                if let sb = gen.nextRealtime() { player.enqueue(sb) }
+                let el = CACurrentMediaTime() - t0
+                if i == 0 { trace.append("start") }
+                if el > 0.4 && player.delay < 0.15 { player.delay = 0.20; trace.append("delay->200ms") }
+                if el > 0.08 && !(el > 0.4 && el < 0.48) { errs.append(abs(player.lastError)) }
+                if i % 10 == 0 { trace.append(String(format: "%.0fms:%.1f", el * 1000, player.lastError * 1000)) }
+                i += 1
+                Thread.sleep(forTimeInterval: 0.008)
             }
             let worst = (errs.max() ?? 1) * 1000
             let hasOut = AudioDelayPlayer.hasOutputDevice
-            say(String(format: "Ton-Puffer (Bild/Ton synchron): max. Abweichung %.1f ms %@ [Audioausgang: %@]",
-                       worst, worst < 15 ? "OK" : (hasOut ? "FEHLER" : "nicht prüfbar"), hasOut ? "ja" : "keiner"))
+            say(String(format: "Ton-Puffer (Bild/Ton synchron): max. Abweichung %.1f ms %@ [Audioausgang: %@, Korrekturen: %d]",
+                       worst, worst < 15 ? "OK" : (hasOut ? "FEHLER" : "nicht prüfbar"), hasOut ? "ja" : "keiner", player.retimeCount))
             say("  " + player.debugInfo + " · " + trace.joined(separator: " "))
             if worst >= 15 && hasOut { ok = false }
             player.stop()

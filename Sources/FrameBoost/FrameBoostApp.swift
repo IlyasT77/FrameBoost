@@ -14,8 +14,13 @@ struct FrameBoostApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var model = AppModel()
 
+    static var soak: SoakTest?
+
     init() {
         let args = CommandLine.arguments
+        Log.installCrashHandlers()
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        Log.write("FrameBoost \(version) gestartet · macOS \(ProcessInfo.processInfo.operatingSystemVersionString) · \(args.dropFirst().joined(separator: " "))")
         if let i = args.firstIndex(of: "--selftest") {
             let dir = i + 1 < args.count ? args[i + 1] : "selftest-output"
             exit(SelfTest.run(outputDir: dir) ? 0 : 1)
@@ -33,7 +38,15 @@ struct FrameBoostApp: App {
             ContentView(model: model)
                 .preferredColorScheme(.dark)
                 .onAppear {
-                    if CommandLine.arguments.contains("--demo") { model.selectedVideo = AppModel.demoID; model.start() }
+                    let args = CommandLine.arguments
+                    if args.contains("--demo") { model.selectedVideo = AppModel.demoID; model.start() }
+                    if let i = args.firstIndex(of: "--soak"), FrameBoostApp.soak == nil {
+                        let secs = i + 1 < args.count ? Double(args[i + 1]) ?? 600 : 600
+                        let dir = i + 2 < args.count ? args[i + 2] : "soak-output"
+                        let s = SoakTest(model: model, duration: secs, dir: dir)
+                        FrameBoostApp.soak = s
+                        s.run()
+                    }
                 }
         }
         .windowStyle(.hiddenTitleBar)

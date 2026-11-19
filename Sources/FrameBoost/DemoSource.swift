@@ -26,25 +26,31 @@ final class DemoSource {
         CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &pool)
     }
 
+    /// Start/stop are serialized on the demo queue, so a running timer tick never races a restart.
     func start(store: FrameStore, audio: AudioDelayPlayer? = nil) {
-        stop(); tick = 0; syncTest = true
-        let t = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
-        t.schedule(deadline: .now(), repeating: .nanoseconds(16_666_667), leeway: .microseconds(500))
-        t.setEventHandler { [weak self, weak store, weak audio] in
-            guard let self = self, let store = store else { return }
-            let gameFrame = self.tick / 2
-            if self.tick % 2 == 0 || self.current == nil {
-                self.current = self.render(frame: Double(gameFrame))
-                if gameFrame % 30 == 0 { self.sound.beep() }   // same moment as the white flash
+        queue.sync {
+            self.stopOnQueue()
+            self.tick = 0; self.syncTest = true; self.current = nil
+            let t = DispatchSource.makeTimerSource(flags: .strict, queue: self.queue)
+            t.schedule(deadline: .now(), repeating: .nanoseconds(16_666_667), leeway: .microseconds(500))
+            t.setEventHandler { [weak self, weak store, weak audio] in
+                guard let self = self, let store = store, self.timer != nil else { return }
+                let gameFrame = self.tick / 2
+                if self.tick % 2 == 0 || self.current == nil {
+                    self.current = self.render(frame: Double(gameFrame))
+                    if gameFrame % 30 == 0 { self.sound.beep() }   // same moment as the white flash
+                }
+                if let pb = self.current { store.push(pb) }
+                if let audio = audio, let sb = self.sound.next(frames: SyntheticAudio.rate / 60) { audio.enqueue(sb) }
+                self.tick += 1
             }
-            if let pb = self.current { store.push(pb) }
-            if let audio = audio, let sb = self.sound.next(frames: SyntheticAudio.rate / 60) { audio.enqueue(sb) }
-            self.tick += 1
+            t.resume(); self.timer = t
         }
-        t.resume(); timer = t
     }
 
-    func stop() { timer?.cancel(); timer = nil; syncTest = false }
+    func stop() { queue.sync { self.stopOnQueue() } }
+
+    private func stopOnQueue() { timer?.cancel(); timer = nil; syncTest = false; current = nil }
 
     /// Renders game frame `frame` (fractional values give the exact in-between ground truth).
     func render(frame n: Double, fast: Bool = false) -> CVPixelBuffer? {

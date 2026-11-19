@@ -57,6 +57,23 @@ jobs:
           sleep 8
           screencapture -x ci-output/app_screenshot.png || true
           kill $PID || true
+      - name: Soak test (10 min, every feature, memory + crash check)
+        if: always()
+        timeout-minutes: 16
+        run: |
+          mkdir -p ci-output
+          set +e
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --soak 600 "$PWD/ci-output" > ci-output/soak-stdout.txt 2>&1 &
+          PID=$!
+          sleep 300
+          screencapture -x ci-output/soak_5min.png
+          wait $PID
+          CODE=$?
+          echo "exit code: $CODE" >> ci-output/soak-stdout.txt
+          cp ~/Library/Logs/FrameBoost/frameboost.log ci-output/ 2>/dev/null
+          cp ~/Library/Logs/FrameBoost/last-crash.txt ci-output/ 2>/dev/null
+          cp ~/Library/Logs/DiagnosticReports/FrameBoost* ci-output/ 2>/dev/null
+          exit $CODE
       - name: Installer window screenshot
         if: always()
         continue-on-error: true

@@ -47,6 +47,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     var gpuMs: Double { statLock.lock(); defer { statLock.unlock() }; return _gpuMs }
     var active = false
     private var lastDraw: CFTimeInterval = 0
+    private var framesSinceFlush = 0
     private var drawPeriod: Double = 1.0 / 60.0
 
     /// How long the picture is held back compared to the moment it arrived from the capture card:
@@ -92,6 +93,8 @@ final class Renderer: NSObject, MTKViewDelegate {
             statLock.lock(); drawPeriod = drawPeriod * 0.95 + dp * 0.05; statLock.unlock()
         }
         lastDraw = now
+        framesSinceFlush += 1
+        if framesSinceFlush >= 120, let cache = cache { CVMetalTextureCacheFlush(cache, 0); framesSinceFlush = 0 }  // no growth over long sessions
         if active, let f = store.take(after: lastSeq), let cache = cache {
             var cvTex: CVMetalTexture?
             let pb = f.buffer

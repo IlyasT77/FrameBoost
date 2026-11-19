@@ -47,6 +47,9 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var audioPreview: AVCaptureAudioPreviewOutput?
     private let audioOut = AVCaptureAudioDataOutput()
     private let audioQueue = DispatchQueue(label: "capture.audio", qos: .userInteractive)
+    /// Every AVCaptureSession call happens on this one serial queue (Apple's rule; starting and
+    /// stopping from different threads can throw an exception and crash the app).
+    private let sessionQueue = DispatchQueue(label: "capture.session", qos: .userInitiated)
     /// Buffered, delayed playback (picture/sound in sync). If nil, sound plays directly without buffer.
     weak var audioPlayer: AudioDelayPlayer?
     var useAudioBuffer = true
@@ -54,7 +57,13 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private weak var store: FrameStore?
     private(set) var formatDescription = ""
 
-    var volume: Float = 1.0 { didSet { audioPreview?.volume = volume; audioPlayer?.volume = volume } }
+    var volume: Float = 1.0 {
+        didSet {
+            let v = volume
+            audioPlayer?.volume = v
+            sessionQueue.async { self.audioPreview?.volume = v }
+        }
+    }
 
     static func requestAccess(_ done: @escaping (Bool) -> Void) {
         AVCaptureDevice.requestAccess(for: .video) { v in
@@ -62,13 +71,32 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
     }
 
-    func start(videoID: String, audioID: String?, store: FrameStore) throws {
-        stop()
-        self.store = store
+    /// Opens the card asynchronously; `completion` runs on the main thread with the format text or an error.
+    func start(videoID: String, audioID: String?, store: FrameStore, completion: @escaping (Result<String, Error>) -> Void) {
+        let useBuffer = useAudioBuffer, vol = volume
+        sessionQueue.async {
+            self.stopOnQueue()
+            self.store = store
+            do {
+                try self.configure(videoID: videoID, audioID: audioID, useBuffer: useBuffer, volume: vol)
+                self.session.startRunning()
+                let fmt = self.formatDescription
+                Log.write("Capture gestartet: \(fmt)")
+                DispatchQueue.main.async { completion(.success(fmt)) }
+            } catch {
+                self.stopOnQueue()
+                Log.write("Capture-Fehler: \(error.localizedDescription)")
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+    }
+
+    private func configure(videoID: String, audioID: String?, useBuffer: Bool, volume: Float) throws {
         guard let dev = AVCaptureDevice(uniqueID: videoID) else { throw err("Gerät nicht gefunden") }
-        session.beginConfiguration()
         let input = try AVCaptureDeviceInput(device: dev)
-        guard session.canAddInput(input) else { session.commitConfiguration(); throw err("Gerät ist belegt (OBS / QuickTime schließen)") }
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        guard session.canAddInput(input) else { throw err("Gerät ist belegt (OBS / QuickTime schließen)") }
         session.addInput(input)
         configureBestFormat(dev)
 
@@ -76,12 +104,12 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                                 kCVPixelBufferMetalCompatibilityKey as String: true]
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
-        if session.canAddOutput(output) { session.addOutput(output) }
+        guard session.canAddOutput(output) else { throw err("Videoausgang konnte nicht geöffnet werden") }
+        session.addOutput(output)
 
         if let aid = audioID, let adev = AVCaptureDevice(uniqueID: aid), let ain = try? AVCaptureDeviceInput(device: adev), session.canAddInput(ain) {
             session.addInput(ain)
-            if useAudioBuffer, let player = audioPlayer {
-                player.volume = volume
+            if useBuffer, audioPlayer != nil {
                 audioOut.audioSettings = [AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32,
                                           AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false,
                                           AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2]
@@ -93,18 +121,17 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
                 if session.canAddOutput(prev) { session.addOutput(prev); audioPreview = prev }
             }
         }
-        session.commitConfiguration()
-        queue.async { self.session.startRunning() }
     }
 
-    func stop() {
+    func stop() { sessionQueue.async { self.stopOnQueue() } }
+
+    private func stopOnQueue() {
         if session.isRunning { session.stopRunning() }
         session.beginConfiguration()
         session.inputs.forEach { session.removeInput($0) }
         session.outputs.forEach { session.removeOutput($0) }
         session.commitConfiguration()
         audioPreview = nil
-        audioPlayer?.stop()
     }
 
     /// Prefer 1080p (then 1440p/4K/720p) with the highest frame rate the card offers.

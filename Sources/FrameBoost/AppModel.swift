@@ -39,6 +39,8 @@ final class AppModel: ObservableObject {
     private var statTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var activity: NSObjectProtocol?
+    /// increases with every start/stop: late callbacks of an older start are ignored
+    private var generation = 0
 
     var sourceName: String {
         if selectedVideo == AppModel.demoID { return "Demo-Signal" }
@@ -112,30 +114,35 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        generation += 1
+        let gen = generation
         errorText = nil
         stopSources()
         store.reset()
         renderer?.reset()
+        audio.begin()
+        updateAudioDelay()
         if selectedVideo == AppModel.demoID {
-            audio.stop(); updateAudioDelay()
             demo.start(store: store, audio: audioSync ? audio : nil); setRunning(true)
             stats.format = "Demo 1280×720 @ 60 Hz (Spiel: 30 FPS) · weißes Quadrat + Piepton = Sync-Test"
+            Log.write("Start: Demo-Signal, Modus \(mode.rawValue), Qualität \(quality.rawValue)")
             return
         }
+        let video = selectedVideo, audioID = selectedAudio == AppModel.noAudioID ? nil : selectedAudio
+        Log.write("Start: \(sourceName), Ton: \(audioID ?? "aus"), Modus \(mode.rawValue)")
         CaptureManager.requestAccess { [weak self] ok in
-            guard let self = self else { return }
+            guard let self = self, gen == self.generation else { return }
             guard ok else {
                 self.errorText = "Kamera-Zugriff verweigert. Systemeinstellungen → Datenschutz & Sicherheit → Kamera → FrameBoost erlauben."
                 self.setRunning(false); return
             }
-            do {
-                self.updateAudioDelay()
-                try self.capture.start(videoID: self.selectedVideo,
-                                       audioID: self.selectedAudio == AppModel.noAudioID ? nil : self.selectedAudio, store: self.store)
-                self.setRunning(true)
-                self.stats.format = self.capture.formatDescription
-            } catch {
-                self.errorText = error.localizedDescription; self.setRunning(false)
+            self.setRunning(true)
+            self.capture.start(videoID: video, audioID: audioID, store: self.store) { [weak self] result in
+                guard let self = self, gen == self.generation else { return }
+                switch result {
+                case .success(let fmt): self.stats.format = fmt
+                case .failure(let e): self.errorText = e.localizedDescription; self.setRunning(false)
+                }
             }
         }
     }
@@ -151,7 +158,11 @@ final class AppModel: ObservableObject {
         stats.outputLatencyMs = audio.outputLatency * 1000
     }
 
-    func stop() { stopSources(); setRunning(false); renderer?.reset() }
+    func stop() {
+        generation += 1
+        stopSources(); setRunning(false); renderer?.reset()
+        Log.write("Stop")
+    }
 
     private func setRunning(_ on: Bool) {
         running = on

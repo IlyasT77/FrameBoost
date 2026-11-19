@@ -73,13 +73,24 @@ final class AudioDelayPlayer {
     private var _delay: Double = 0.06
     private var _volume: Float = 1
     private var configObserver: NSObjectProtocol?
+    /// guards engine lifecycle (start/stop can come from the main thread and the capture/demo threads)
+    private let stateLock = NSLock()
+    private var accepting = false
     private(set) var outputLatency: Double = 0
     private(set) var failed = false
     private(set) var running = false
 
+    /// Accept sound from now on (call before starting a source).
+    func begin() {
+        stateLock.lock(); accepting = true; failed = false; stateLock.unlock()
+    }
+
     var volume: Float {
         get { _volume }
-        set { _volume = newValue; engine?.mainMixerNode.outputVolume = newValue }
+        set {
+            _volume = newValue
+            stateLock.lock(); engine?.mainMixerNode.outputVolume = newValue; stateLock.unlock()
+        }
     }
 
     /// Seconds between "sound arrives" and "sound is heard".
@@ -126,10 +137,12 @@ final class AudioDelayPlayer {
         running = true
         // output device changed (headphones, AirPods...): restart with the new latency
         configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: e, queue: .main) { [weak self] _ in
-            guard let self = self, let e = self.engine else { return }
+            guard let self = self else { return }
+            self.stateLock.lock(); defer { self.stateLock.unlock() }
+            guard let e = self.engine, self.accepting else { return }
             self.outputLatency = AudioDelayPlayer.defaultOutputLatency()
             self.lk.lock(); self.line.reset(); self.applyTarget(); self.lk.unlock()
-            try? e.start()
+            do { try e.start() } catch { Log.write("Audio-Neustart fehlgeschlagen: \(error.localizedDescription)") }
         }
     }
 
@@ -138,11 +151,13 @@ final class AudioDelayPlayer {
         guard let fd = CMSampleBufferGetFormatDescription(sb),
               let asbdPtr = CMAudioFormatDescriptionGetStreamBasicDescription(fd) else { return }
         let asbd = asbdPtr.pointee
-        guard asbd.mFormatID == kAudioFormatLinearPCM else { return }
+        guard asbd.mFormatID == kAudioFormatLinearPCM, asbd.mSampleRate >= 8000 else { return }
+        stateLock.lock(); defer { stateLock.unlock() }
+        guard accepting, !failed else { return }
         if !running || abs(asbd.mSampleRate - rate) > 1 {
-            stop()
+            teardown()
             startEngine(sampleRate: asbd.mSampleRate)
-            if failed { return }
+            if failed { Log.write("Audio-Ausgabe konnte nicht gestartet werden"); return }
         }
         let frames = CMSampleBufferGetNumSamples(sb)
         guard frames > 0 else { return }
@@ -224,6 +239,13 @@ final class AudioDelayPlayer {
     }
 
     func stop() {
+        stateLock.lock(); defer { stateLock.unlock() }
+        accepting = false
+        teardown()
+    }
+
+    /// call with stateLock held
+    private func teardown() {
         if let o = configObserver { NotificationCenter.default.removeObserver(o); configObserver = nil }
         engine?.stop(); engine = nil; running = false
         lk.lock(); line.reset(); lk.unlock()

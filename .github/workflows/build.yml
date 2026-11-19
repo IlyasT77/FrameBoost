@@ -64,7 +64,7 @@ jobs:
         run: |
           set +e
           mkdir -p ci-output
-          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --soak 600 "$PWD/ci-output" > ci-output/soak-stdout.txt 2>&1 &
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --soak 600 --soak-dir "$PWD/ci-output" > ci-output/soak-stdout.txt 2>&1 &
           PID=$!
           RESULT="hängt"
           for i in $(seq 1 180); do

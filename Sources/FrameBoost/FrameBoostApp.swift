@@ -52,8 +52,10 @@ struct FrameBoostApp: App {
                     }
                     if args.contains("--demo") { model.selectedVideo = AppModel.demoID; model.start() }
                     if let i = args.firstIndex(of: "--soak"), FrameBoostApp.soak == nil {
+                        // "--soak 600 --soak-dir /path": a bare path argument would make macOS treat it as a file to open
+                        // (SwiftUI then skips the main window), so the folder comes as a named option
                         let secs = i + 1 < args.count ? Double(args[i + 1]) ?? 600 : 600
-                        let dir = i + 2 < args.count ? args[i + 2] : "soak-output"
+                        let dir = args.firstIndex(of: "--soak-dir").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "soak-output"
                         let s = SoakTest(model: model, duration: secs, dir: dir)
                         FrameBoostApp.soak = s
                         s.run()

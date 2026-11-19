@@ -5,6 +5,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+# a newer push cancels an older run, so an old build can never overwrite the download
+concurrency:
+  group: mac-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   mac:
     runs-on: macos-15
@@ -116,7 +120,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: FrameBoost für Mac (neueste Version)
+          name: FrameBoost – neueste Version (Mac + Windows)
           files: build/FrameBoost.dmg
           make_latest: true
       - uses: actions/upload-artifact@v4

@@ -1,0 +1,9 @@
+FrameBoost Dauertest
+====================
+Laufzeit: 600 s, Aktionen: 240 (alle 34 Funktionen mehrfach durchgeklickt)
+Abstürze: keine (App lief bis zum Ende)
+Speicher: Start 57 MB, Ende 59 MB, max 69 MB, Wachstum 0.2 MB/min
+Ausgabe-FPS (laufend): min 27, max 61
+Eingefrorene Messpunkte (läuft, aber 0 FPS): 0
+Probleme: keine
+ERGEBNIS: BESTANDEN

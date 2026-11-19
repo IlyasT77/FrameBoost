@@ -8,6 +8,10 @@ Der Ton wird so verzögert, dass Bild und Ton synchron bleiben.
 
 ![FrameBoost auf dem Mac](docs/mac-app.png)
 
+| Start | Installation (Mac) | Windows |
+|---|---|---|
+| ![](docs/mac-start.png) | ![](docs/mac-installer.png) | ![](docs/windows-app.png) |
+
 ## Download
 
 | System | Datei | Voraussetzungen |
@@ -60,6 +64,11 @@ Beides muss gleichzeitig kommen; sonst in den Einstellungen unter *Ton → Feina
 Die zusätzliche Verzögerung beträgt etwa ein echtes Bild (≈ 33 ms bei 30 FPS) – das ist bei jeder Frame Generation so.
 
 ![Vergleich: Überblenden vs. FrameBoost](docs/vergleich.png)
+
+## Getestet
+
+Jede Version läuft vor der Veröffentlichung automatisch durch Selbsttest (Bildqualität, Ton-Sync, Duplikate, Szenenwechsel)
+und einen Dauertest, der 10 Minuten lang alle Funktionen durchklickt. Ergebnisse und behobene Fehler: [TESTBERICHT.md](TESTBERICHT.md).
 
 ## Probleme melden
 

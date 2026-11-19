@@ -70,14 +70,12 @@ final class AudioDelayPlayer {
     }
 
     /// Media time `pts` shall be heard at host time `arrival + delay`.
+    /// The timebase is set *now* (to the media time that belongs to this moment), so it keeps running
+    /// continuously; a future "atHostTime" would freeze it until then.
     private func retime(pts: CMTime, arrival: CFTimeInterval) {
-        let hostClock = CMClockGetHostTimeClock()
-        let atHost = CMTime(seconds: arrival + delay, preferredTimescale: 1_000_000_000)
-        // CACurrentMediaTime() and the host time clock share the same time base (mach_absolute_time)
-        let hostNow = CMClockGetTime(hostClock)
-        let offset = atHost.seconds - CACurrentMediaTime()
-        let target = CMTimeAdd(hostNow, CMTime(seconds: offset, preferredTimescale: 1_000_000_000))
-        sync.setRate(1.0, time: pts, atHostTime: target)
+        let now = CACurrentMediaTime()
+        let mediaNow = CMTimeAdd(pts, CMTime(seconds: (now - arrival) - delay, preferredTimescale: 1_000_000_000))
+        sync.setRate(1.0, time: mediaNow, atHostTime: CMClockGetTime(CMClockGetHostTimeClock()))
     }
 
     var debugInfo: String {

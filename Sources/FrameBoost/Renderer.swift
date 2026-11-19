@@ -74,7 +74,7 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     var videoDelay: Double {
         statLock.lock(); defer { statLock.unlock() }
-        let fg = settings.mode == .off ? 0 : interval + 0.3 * drawPeriod
+        let fg = settings.mode == .off ? drawPeriod : interval + 1.2 * drawPeriod
         return fg + 1.5 * drawPeriod + _gpuMs / 1000
     }
 
@@ -85,7 +85,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     }
 
     func reset() {
-        lastSeq = 0; timeB = 0; timeA = 0; outClock = 0; lastShown = (0, -1)
+        lastSeq = 0; timeB = 0; timeA = 0; outClock = 0; lastShown = (0, -1); pendingPair = nil
         statLock.lock(); presentTimes.removeAll(); statLock.unlock()
         interp.reset()
     }
@@ -101,6 +101,27 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
+    private var pendingPair: (a: CFTimeInterval, b: CFTimeInterval, i: Double)?
+
+    /// Encodes copy + motion analysis of a new real frame in its own command buffer (same queue = runs
+    /// after this refresh's image and before the next refresh's work).
+    private func analyse(_ f: SourceFrame) {
+        guard let cache = cache, let cmd = interp.queue.makeCommandBuffer() else { return }
+        var cvTex: CVMetalTexture?
+        let pb = f.buffer
+        let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb)
+        guard CVMetalTextureCacheCreateTextureFromImage(nil, cache, pb, nil, .bgra8Unorm, w, h, 0, &cvTex) == kCVReturnSuccess,
+              let cvt = cvTex, let tex = CVMetalTextureGetTexture(cvt) else { return }
+        interp.ingest(tex, isCut: f.isCut, cmd: cmd)
+        cmd.addCompletedHandler { _ in _ = cvt; _ = pb }   // keep the capture buffer alive until the copy ran
+        cmd.commit()
+        lastSeq = f.seq
+        let gap = f.time - timeB
+        let a = timeB > 0 && gap > 0.004 && gap < 0.1 ? timeB : f.time - f.interval
+        pendingPair = (a, f.time, f.interval)
+        if !interp.hasPair { timeA = a; timeB = f.time; interval = f.interval; pendingPair = nil }
+    }
+
     func draw(in view: MTKView) {
         guard let drawable = view.currentDrawable, let cmd = interp.queue.makeCommandBuffer() else { return }
         let now = CACurrentMediaTime()
@@ -112,20 +133,13 @@ final class Renderer: NSObject, MTKViewDelegate {
         lastDraw = now
         framesSinceFlush += 1
         if framesSinceFlush >= 120, let cache = cache { CVMetalTextureCacheFlush(cache, 0); framesSinceFlush = 0 }  // no growth over long sessions
-        if active, let f = store.take(after: lastSeq), let cache = cache {
-            var cvTex: CVMetalTexture?
-            let pb = f.buffer
-            let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb)
-            if CVMetalTextureCacheCreateTextureFromImage(nil, cache, pb, nil, .bgra8Unorm, w, h, 0, &cvTex) == kCVReturnSuccess,
-               let cvTex = cvTex, let tex = CVMetalTextureGetTexture(cvTex) {
-                interp.ingest(tex, isCut: f.isCut, cmd: cmd)
-                cmd.addCompletedHandler { _ in _ = cvTex; _ = pb } // keep the capture buffer alive until the copy ran
-                lastSeq = f.seq
-                let gap = f.time - timeB
-                timeA = timeB > 0 && gap > 0.004 && gap < 0.1 ? timeB : f.time - f.interval
-                timeB = f.time; interval = f.interval
-            }
-        }
+        // The motion analysis of a new real frame is encoded AFTER this refresh's image (see the end of draw):
+        // the image goes out without waiting for the analysis, which then uses the free GPU time until the
+        // next refresh. The new pair is therefore used from the next refresh on (the output clock is that
+        // one refresh further behind).
+        if let p = pendingPair { timeA = p.a; timeB = p.b; interval = p.i; pendingPair = nil }
+        let newFrame = active ? store.take(after: lastSeq) : nil
+        defer { if let f = newFrame { analyse(f) } }
         guard active, interp.ready, let frame = interp.output else {
             // nothing to show: clear to black
             if let rpd = view.currentRenderPassDescriptor, let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) { enc.endEncoding() }
@@ -136,7 +150,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         let mode = settings.mode
         let dp = drawPeriod
         // vsync-locked output clock, one real frame (+ a little margin) behind the signal
-        let target = now - interval - 0.3 * dp
+        let target = now - interval - 1.2 * dp
         if outClock == 0 || prevDraw == 0 {
             outClock = target
         } else {

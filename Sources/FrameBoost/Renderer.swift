@@ -133,10 +133,18 @@ final class Renderer: NSObject, MTKViewDelegate {
     /// how far the output clock stays behind the newest real frame, on top of one frame interval
     private func margin(_ dp: Double) -> Double { max(1.2 * dp, 0.012) }
 
-    /// output position between frame A (0) and frame B (1) for a given phase, snapped to the mode's grid
-    private func snapped(_ phase: Double, _ mode: BoostMode) -> Double {
-        guard let m = mode.steps else { return phase }
-        return ((phase * Double(m) - gridOffset).rounded()) / Double(m)
+    /// output grid of the fixed modes in seconds: one real-frame interval / steps (2× at 30 FPS: 16.7 ms).
+    /// Absolute time, NOT a fraction of the current pair: if a real frame was skipped, the pair spans two
+    /// intervals and simply gets twice as many in-between images.
+    private func gridStep(_ mode: BoostMode) -> Double? { mode.steps.map { max(interval, 0.004) / Double($0) } }
+
+    /// position between frame A (0) and frame B (1) shown at output time `clock`, snapped to the grid;
+    /// `beyond`: that moment lies after frame B, i.e. it needs the next real frame
+    private func position(_ clock: Double, _ mode: BoostMode) -> (pos: Double, beyond: Bool) {
+        let span = max(timeB - timeA, 0.004)
+        guard let g = gridStep(mode) else { let p = (clock - timeA) / span; return (p, p > 1 + 1e-9) }
+        let k = ((clock - timeA) / g - gridOffset).rounded()
+        return (k * g / span, k > span / g + 0.5)
     }
 
     private func ingestNow() {
@@ -226,10 +234,9 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
         var t: Float = 1
         if mode != .off {
-            var phase = (outClock - timeA) / max(timeB - timeA, 0.004)
-            if let m = mode.steps, interp.hasPair, steps > 0 {
+            if let g = gridStep(mode), interp.hasPair, steps > 0 {
                 // track where the refreshes fall between grid points (circular mean) and centre the rounding on it
-                let x = phase * Double(m), f = x - x.rounded(.down)
+                let x = (outClock - timeA) / g, f = x - x.rounded(.down)
                 gridVec = (gridVec.x * 0.97 + cos(2 * .pi * f) * 0.03, gridVec.y * 0.97 + sin(2 * .pi * f) * 0.03)
                 if hypot(gridVec.x, gridVec.y) > 0.5 {
                     // continuous (unwrapped) so it never jumps by a whole image; kept within [-0.25, 1.25)
@@ -241,15 +248,14 @@ final class Renderer: NSObject, MTKViewDelegate {
                     gridOffset = 0.5   // refresh rate is no multiple of the frame rate: plain rounding down
                 }
             }
-            var pos = snapped(phase, mode)
+            var p = position(outClock, mode)
             // this refresh needs a moment after frame B and the next real frame is already here: analyse it first,
             // in this refresh's own command buffer (only happens when a frame came late or a refresh was skipped)
-            if pos > 1 + 1e-9, interp.hasPair, let f = store.take(after: lastSeq) {
+            if p.beyond, interp.hasPair, let f = store.take(after: lastSeq) {
                 analyse(f, via: "S", into: cmd)
-                phase = (outClock - timeA) / max(timeB - timeA, 0.004)
-                pos = snapped(phase, mode)
+                p = position(outClock, mode)
             }
-            t = Float(min(max(pos, 0), 1))
+            t = Float(min(max(p.pos, 0), 1))
         }
         let synthMode: SynthMode = mode == .off ? .passthrough : (settings.blendOnly ? .blend : .interpolate)
         let screen = drawable.texture
@@ -286,7 +292,7 @@ final class Renderer: NSObject, MTKViewDelegate {
         }
         // may the next real frame replace the pair? Only if the next refresh shows a moment after frame B.
         nextNeedsNewPair = mode == .off || !interp.hasPair
-            || snapped((outClock + dp - timeA) / max(timeB - timeA, 0.004), mode) > 1 + 1e-9
+            || position(outClock + dp, mode).beyond
         cmd.present(drawable)
         cmd.commit()
         // the analysis of an already waiting frame goes in its own command buffer AFTER this refresh's image,

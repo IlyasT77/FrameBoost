@@ -40,6 +40,7 @@ final class VideoTest {
     private func finish() {
         guard let r = model.renderer else { exit(3) }
         let (presented, drawn, media, allDraws) = r.endMeasure()
+        try? r.takeTrace().joined(separator: "\n").write(toFile: dir + "/videotest-trace.csv", atomically: true, encoding: .utf8)
         // 1) the system's own refresh calls (independent of FrameBoost): how regular is this computer?
         var callGaps: [Double] = []
         for i in 1..<max(allDraws.count, 1) { callGaps.append((allDraws[i].time - allDraws[i - 1].time) * 1000) }

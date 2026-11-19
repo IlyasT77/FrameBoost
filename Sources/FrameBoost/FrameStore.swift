@@ -8,6 +8,7 @@ struct SourceFrame {
     let seq: UInt64
     let interval: Double          // average time between real game frames
     let isCut: Bool               // scene change: don't interpolate across it
+    var arrival: CFTimeInterval = 0   // unsmoothed arrival time (diagnosis)
 }
 
 /// Thread-safe hand-off of the newest *unique* source frame to the renderer.
@@ -83,7 +84,7 @@ final class FrameStore {
 
         arrivals.append(time); if arrivals.count > 120 { arrivals.removeFirst() }
         seq &+= 1
-        latest = SourceFrame(buffer: pb, time: smoothedTime, seq: seq, interval: interval, isCut: isCut)
+        latest = SourceFrame(buffer: pb, time: smoothedTime, seq: seq, interval: interval, isCut: isCut, arrival: time)
         return true
     }
 

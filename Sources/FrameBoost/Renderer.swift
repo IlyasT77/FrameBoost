@@ -58,9 +58,13 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var measuredDrawn: [Double] = []
     private var measuredMedia: [Double] = []
     private var measuredAllDraws: [(time: Double, media: Double)] = []
+    /// per-event trace for the video test (main thread only): D = refresh, A = analysis of a new real frame
+    private var trace: [String] = []
+    func takeTrace() -> [String] { let t = trace; trace = []; return t }
 
     func beginMeasure() {
         statLock.lock(); measuredPresented = []; measuredDrawn = []; measuredMedia = []; measuredAllDraws = []; measuring = true; statLock.unlock()
+        trace = ["typ;jetzt_ms;outClock_ms;A_ms;B_ms;t;paar_neu;quelle_ms;seq"]
     }
     func endMeasure() -> (presented: [Double], drawn: [Double], media: [Double], allDraws: [(time: Double, media: Double)]) {
         statLock.lock(); defer { statLock.unlock() }
@@ -113,12 +117,12 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     private func ingestNow() {
         guard active, let f = store.take(after: lastSeq) else { return }
-        analyse(f)
+        analyse(f, via: "I")
     }
 
     /// Encodes copy + motion analysis of a new real frame in its own command buffer (same queue = runs
     /// after this refresh's image and before the next refresh's work).
-    private func analyse(_ f: SourceFrame) {
+    private func analyse(_ f: SourceFrame, via: String = "D") {
         guard let cache = cache, let cmd = interp.queue.makeCommandBuffer() else { return }
         var cvTex: CVMetalTexture?
         let pb = f.buffer
@@ -133,6 +137,10 @@ final class Renderer: NSObject, MTKViewDelegate {
         let a = timeB > 0 && gap > 0.004 && gap < 0.1 ? timeB : f.time - f.interval
         pendingPair = (a, f.time, f.interval)
         if !interp.hasPair { timeA = a; timeB = f.time; interval = f.interval; pendingPair = nil }
+        if measuring && trace.count < 20000 {
+            trace.append(String(format: "A%@;%.3f;%.3f;%.3f;%.3f;;;%.3f;%llu", via, CACurrentMediaTime() * 1000, outClock * 1000,
+                                a * 1000, f.time * 1000, f.arrival * 1000, f.seq))
+        }
     }
 
     func draw(in view: MTKView) {
@@ -150,9 +158,10 @@ final class Renderer: NSObject, MTKViewDelegate {
         // the image goes out without waiting for the analysis, which then uses the free GPU time until the
         // next refresh. The new pair is therefore used from the next refresh on (the output clock is that
         // one refresh further behind).
-        if let p = pendingPair { timeA = p.a; timeB = p.b; interval = p.i; pendingPair = nil }
+        var applied = 0
+        if let p = pendingPair { timeA = p.a; timeB = p.b; interval = p.i; pendingPair = nil; applied = 1 }
         let newFrame = active ? store.take(after: lastSeq) : nil
-        defer { if let f = newFrame { analyse(f) } }
+        defer { if let f = newFrame { analyse(f, via: "D") } }
         guard active, interp.ready, let frame = interp.output else {
             // nothing to show: clear to black
             if let rpd = view.currentRenderPassDescriptor, let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) { enc.endEncoding() }
@@ -192,6 +201,9 @@ final class Renderer: NSObject, MTKViewDelegate {
             interp.present(frame, to: screen, sharpen: settings.sharpen, cmd: cmd)
         }
 
+        if measuring && trace.count < 20000 {
+            trace.append(String(format: "D;%.3f;%.3f;%.3f;%.3f;%.3f;%d;;%llu", now * 1000, outClock * 1000, timeA * 1000, timeB * 1000, t, applied, lastSeq))
+        }
         if measuring { statLock.lock(); measuredAllDraws.append((now, mode == .off ? timeB : timeA + Double(t) * (timeB - timeA))); statLock.unlock() }
         if lastShown.0 != lastSeq || abs(lastShown.1 - t) > 0.001 {
             lastShown = (lastSeq, t)

@@ -1,0 +1,17 @@
+FrameBoost Videotest – 30-FPS-Video als Capture Card, Ziel: 60 FPS gelockt
+=========================================================================
+Video: testvideo_30fps.mp4 · Video 1920×1080 · 30 FPS → 60 Hz-Signal (testvideo_30fps.mp4)
+Eingang: Signal 59.0 Hz, davon echte Bilder 30.0 FPS (Duplikate entfernt: 49 %)
+Bildschirm: 60 Hz · Modus 2× · GPU 7.5 ms pro Bild
+Messung: 40 s, 2260 neue Bilder auf dem Bildschirm (Zeichenzeitpunkte)
+Ausgabe: 56.47 FPS
+Bildabstand: Mittel 17.71 ms (Ziel 16.67 ms), Streuung 6.50 ms, 1%: 10.38 ms, 99%: 43.39 ms
+Pünktlich (±2 ms): 70.4 % · Hänger (> 1,5 Bildabstände): 102
+Bildinhalt: rückt pro Bild 17.71 ms im Video vor (Streuung 6.45 ms), gleichmäßig (±1,5 ms): 92.9 %, doppelte Bilder: 13
+Ton-Puffer: 87 ms
+--- getrennt nach Ursache ---
+Testrechner: 2251 Refreshes, davon 102 mit ausgelassenem Aufruf; 49 doppelte Aufrufe im selben Refresh (Abstand der Aufrufe 1%: 4.8 ms, 99%: 43.4 ms)
+Virtuelle Capture Card: bei 32 Refreshes war das nötige echte Bild noch nicht da (oder wurde übersprungen)
+FrameBoost, alle Refreshes: bei 99.6 % ein neues Bild, bei 97.8 % genau passend zur vergangenen Zeit
+FrameBoost, Refreshes mit rechtzeitigem Eingangsbild (2219): bei 99.8 % ein neues Bild, bei 98.9 % genau passend
+ERGEBNIS: FrameBoost GELOCKT ✔ (mind. 98 % neue und 95 % zeitlich exakte Bilder, wenn das Eingangsbild rechtzeitig da war; die übrigen Aussetzer kommen vom Testrechner)

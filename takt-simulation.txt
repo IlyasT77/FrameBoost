@@ -1,0 +1,28 @@
+FrameBoost Takt-Simulation (Logik wie Renderer.swift, je 3 × 40 s)
+Spalten: neue Bilder pro Refresh · zeitlich exakt · Verzögerung Bildmoment → Refresh (Median)
+
+Normal (USB-Jitter 1,5 ms)
+  60 Hz, 2× (30 → 60)       99.96 % neu ·  99.92 % exakt ·  48 ms
+  120 Hz, 4× (30 → 120)     99.97 % neu ·  99.97 % exakt ·  48 ms
+  180 Hz, 6× (30 → 180)     99.97 % neu ·  99.96 % exakt ·  48 ms
+  60 Hz, Auto              100.00 % neu ·  99.96 % exakt ·  53 ms
+  144 Hz, Auto              99.98 % neu ·  99.97 % exakt ·  45 ms
+  180 Hz, Auto              99.99 % neu ·  99.97 % exakt ·  45 ms
+
+Unruhige Capture Card (USB-Jitter 4 ms)
+  60 Hz, 2× (30 → 60)       99.93 % neu ·  99.86 % exakt ·  48 ms
+  120 Hz, 4× (30 → 120)     99.92 % neu ·  99.83 % exakt ·  48 ms
+  180 Hz, 6× (30 → 180)     99.71 % neu ·  99.27 % exakt ·  47 ms
+  60 Hz, Auto               99.97 % neu ·  99.93 % exakt ·  53 ms
+  144 Hz, Auto              99.98 % neu ·  99.97 % exakt ·  45 ms
+  180 Hz, Auto              99.97 % neu ·  99.96 % exakt ·  45 ms
+
+Spiel ruckelt (5 % der Bilder 1 Signalbild zu spät)
+  60 Hz, 2× (30 → 60)       99.96 % neu ·  99.50 % exakt ·  48 ms
+  120 Hz, 4× (30 → 120)     99.93 % neu ·  99.71 % exakt ·  48 ms
+  180 Hz, 6× (30 → 180)     99.80 % neu ·  99.40 % exakt ·  48 ms
+  60 Hz, Auto              100.00 % neu ·  99.96 % exakt ·  53 ms
+  144 Hz, Auto              99.97 % neu ·  99.28 % exakt ·  45 ms
+  180 Hz, Auto              99.96 % neu ·  99.09 % exakt ·  45 ms
+
+ERGEBNIS: BESTANDEN (schlechtester Normalfall 99.27 %)

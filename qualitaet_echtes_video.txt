@@ -1,0 +1,5 @@
+Qualität der Zwischenbilder gegen die ECHTEN Bilder des 60-FPS-Originals (10 s Big Buck Bunny, höher = besser)
+Bild wiederholen (normales 30 FPS): SSIM 0.983029 PSNR 31.686783 
+Überblenden:                        SSIM 0.985964 PSNR 33.301952 
+FFmpeg Motion Interpolation (MCI):  SSIM 0.990985 PSNR 34.541075 
+FrameBoost:                         SSIM 0.986398 PSNR 35.002696 

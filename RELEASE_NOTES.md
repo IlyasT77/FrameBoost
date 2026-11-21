@@ -1,10 +1,13 @@
-## FrameBoost 2.4.1 – Frame Generation für Konsolen über eine Capture Card
+## FrameBoost 2.4.2 – Frame Generation für Konsolen über eine Capture Card
 
 Aus 30 FPS werden 60, 120 oder 180 FPS – mit eigener Frame Generation, ganz ohne Lossless Scaling.
 
 **Downloads**
 - **macOS** (Apple Silicon M1–M5 und Intel, macOS 14+): `FrameBoost.dmg` → FrameBoost in „Programme“ ziehen → erster Start: Rechtsklick → Öffnen
 - **Windows** 10/11 (64 Bit): `FrameBoost.exe` → bei SmartScreen „Weitere Informationen → Trotzdem ausführen“
+
+**Neu in 2.4.2**
+- 1440p: Liefert die Capture Card 1440p mit vollen 60 Hz, nutzt FrameBoost das auf hochauflösenden Bildschirmen (z. B. MacBook-Retina) automatisch. Auf 1080p-Monitoren bleibt es bei 1080p. 1440p mit nur 30 Hz wird nie genommen (würde ruckeln).
 
 **Neu in 2.4.1**
 - Günstige Capture Cards: FrameBoost wählt immer ein Format mit vollem 60-Hz-Takt (manche USB-2.0-Sticks bieten 1080p nur mit 5 oder 30 Bildern/s – jetzt wird dann 720p60 genommen). Windows misst dafür die tatsächliche Bildrate der Karte.

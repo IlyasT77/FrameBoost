@@ -36,6 +36,10 @@ achten. Karten mit „USB 2.0“ oder „1080P 30Hz“ liefern 1080p nur mit 30 
 720p mit 60 Hz, weil der volle 60-Hz-Takt für flüssige Zwischenbilder wichtiger ist. Teurere Karten (Elgato, AVerMedia) funktionieren ebenfalls.
 Auf dem Mac (auch M1–M5) braucht keine dieser Karten einen Treiber.
 
+**1440p?** Günstige Karten nehmen 1440p nur mit 30 Hz auf – das ruckelt, deshalb nimmt FrameBoost dann 1080p60 und skaliert
+auf den Bildschirm hoch. Echte 1440p mit 60 Hz können erst teurere Karten (z. B. Elgato 4K S); dann nutzt FrameBoost auf
+hochauflösenden Bildschirmen wie dem MacBook-Display automatisch 1440p60 (PS5-Videoausgabe dafür auf 1440p stellen).
+
 **Warum ist die EXE größer als die DMG?** Die Mac-App nutzt Metal, SwiftUI und AVFoundation, die in macOS eingebaut sind.
 Die Windows-EXE muss Python, Qt (Oberfläche), OpenCV (Bildverarbeitung) und NumPy mitbringen.
 

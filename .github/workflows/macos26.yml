@@ -20,7 +20,7 @@ jobs:
         run: brew install create-dmg ffmpeg >/dev/null
       - name: Build app + DMG
         env:
-          VERSION: "2.4.1"
+          VERSION: "2.4.2"
         run: ./scripts/build_dmg.sh
       - name: System
         if: always()

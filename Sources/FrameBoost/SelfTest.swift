@@ -278,6 +278,17 @@ enum SelfTest {
             let good = usb2.w == 1280 && usb2.fps == 60 && usb3.w == 1920 && usb3.fps == 60 && !usb3.mjpeg
             say("  [Fehler 25] Capture-Format: USB-2.0-Stick -> \(usb2.w)x\(usb2.h) @ \(Int(usb2.fps)) Hz, USB-3.0-Karte -> \(usb3.w)x\(usb3.h) @ \(Int(usb3.fps)) Hz \(usb3.mjpeg ? "MJPEG" : "unkomprimiert"): \(good ? "OK" : "FEHLER")")
             if !good { ok = false }
+            // 1440p: only with the full 60 Hz and only on a high-resolution screen (MacBook Retina); 1440p30 never wins
+            func bestHi(_ list: [F], _ hi: Bool) -> F {
+                list.max { CaptureManager.formatScore(width: $0.w, height: $0.h, fps: $0.fps, compressed: $0.mjpeg, highResScreen: hi)
+                         < CaptureManager.formatScore(width: $1.w, height: $1.h, fps: $1.fps, compressed: $1.mjpeg, highResScreen: hi) }!
+            }
+            let card1440: [F] = [(2560, 1440, 60, false), (1920, 1080, 60, false), (3840, 2160, 30, false)]
+            let cheap2K: [F] = [(2560, 1440, 30, true), (1920, 1080, 60, false)]
+            let r1 = bestHi(card1440, true), r2 = bestHi(card1440, false), r3 = bestHi(cheap2K, true)
+            let good2 = r1.h == 1440 && r1.fps == 60 && r2.h == 1080 && r3.h == 1080 && r3.fps == 60
+            say("  1440p: Retina-Bildschirm -> \(r1.h)p\(Int(r1.fps)), 1080p-Monitor -> \(r2.h)p\(Int(r2.fps)), Karte mit nur 2K 30 Hz -> \(r3.h)p\(Int(r3.fps)): \(good2 ? "OK" : "FEHLER")")
+            if !good2 { ok = false }
         }
         say("Geschwindigkeit:")
         for (w, h) in [(1920, 1080), (2560, 1440), (3840, 2160)] {

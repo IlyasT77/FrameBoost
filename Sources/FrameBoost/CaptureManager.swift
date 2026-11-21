@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import CoreMedia
 
 struct DeviceItem: Identifiable, Hashable {
@@ -74,11 +75,12 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     /// Opens the card asynchronously; `completion` runs on the main thread with the format text or an error.
     func start(videoID: String, audioID: String?, store: FrameStore, completion: @escaping (Result<String, Error>) -> Void) {
         let useBuffer = useAudioBuffer, vol = volume
+        let highRes = Thread.isMainThread && CaptureManager.screenIsHighRes()
         sessionQueue.async {
             self.stopOnQueue()
             self.store = store
             do {
-                try self.configure(videoID: videoID, audioID: audioID, useBuffer: useBuffer, volume: vol)
+                try self.configure(videoID: videoID, audioID: audioID, useBuffer: useBuffer, volume: vol, highRes: highRes)
                 self.session.startRunning()
                 let fmt = self.formatDescription
                 Log.write("Capture gestartet: \(fmt)")
@@ -91,14 +93,14 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
     }
 
-    private func configure(videoID: String, audioID: String?, useBuffer: Bool, volume: Float) throws {
+    private func configure(videoID: String, audioID: String?, useBuffer: Bool, volume: Float, highRes: Bool) throws {
         guard let dev = AVCaptureDevice(uniqueID: videoID) else { throw err("Gerät nicht gefunden") }
         let input = try AVCaptureDeviceInput(device: dev)
         session.beginConfiguration()
         defer { session.commitConfiguration() }
         guard session.canAddInput(input) else { throw err("Gerät ist belegt (OBS / QuickTime schließen)") }
         session.addInput(input)
-        configureBestFormat(dev)
+        configureBestFormat(dev, highResScreen: highRes)
 
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                                 kCVPixelBufferMetalCompatibilityKey as String: true]
@@ -137,14 +139,15 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     /// How good a capture format is for FrameBoost (higher = better).
     /// 1. The full 60 Hz signal: the PS5 sends every game frame inside a 60 Hz signal; capturing it at 30 Hz or less
     ///    loses the timing (cheap USB 2.0 sticks offer e.g. 1080p only at 5 or 30 FPS, but 720p at 60).
-    /// 2. Resolution: 1080p is ideal, 4K costs a lot of GPU time for little gain.
+    /// 2. Resolution: 1080p, or 1440p when the screen has more than 1200 pixel rows (e.g. a MacBook's Retina
+    ///    display) and the card delivers 1440p with the full 60 Hz; 4K costs a lot of GPU time for little gain.
     /// 3. Uncompressed (YUV) before MJPEG/H.264 (less noise and latency).
-    static func formatScore(width: Int, height: Int, fps: Double, compressed: Bool) -> Double {
+    static func formatScore(width: Int, height: Int, fps: Double, compressed: Bool, highResScreen: Bool = false) -> Double {
         let rate: Double = fps >= 59 ? 3000 : fps >= 49 ? 2500 : fps * 40
         let res: Double
         switch (width, height) {
         case (1920, 1080): res = 1000
-        case (2560, 1440): res = 900
+        case (2560, 1440): res = highResScreen ? 1100 : 900
         case (1280, 720): res = 700
         case (3840, 2160): res = 600
         default: res = Double(min(width * height, 1920 * 1080)) / 4000
@@ -152,14 +155,21 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         return rate + res + min(fps, 60) - (compressed ? 150 : 0)
     }
 
+    /// The screen FrameBoost is shown on has more than 1200 pixel rows (MacBook Retina display, 1440p/4K monitor).
+    static func screenIsHighRes() -> Bool {
+        guard let s = NSScreen.main else { return false }
+        return s.frame.height * s.backingScaleFactor > 1200
+    }
+
     /// Picks the card's best format by formatScore and sets its highest frame rate.
-    private func configureBestFormat(_ dev: AVCaptureDevice) {
+    private func configureBestFormat(_ dev: AVCaptureDevice, highResScreen: Bool) {
         func score(_ f: AVCaptureDevice.Format) -> Double {
             let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
             let fps = f.videoSupportedFrameRateRanges.map { $0.maxFrameRate }.max() ?? 0
             let sub = CMFormatDescriptionGetMediaSubType(f.formatDescription)
             let compressed = sub == kCMVideoCodecType_JPEG_OpenDML || sub == kCMVideoCodecType_JPEG || sub == kCMVideoCodecType_H264
-            return CaptureManager.formatScore(width: Int(d.width), height: Int(d.height), fps: fps, compressed: compressed)
+            return CaptureManager.formatScore(width: Int(d.width), height: Int(d.height), fps: fps, compressed: compressed,
+                                              highResScreen: highResScreen)
         }
         guard let best = dev.formats.max(by: { score($0) < score($1) }) else { return }
         do {

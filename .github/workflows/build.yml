@@ -12,15 +12,16 @@ on:
         default: ''
 permissions:
   contents: write
-# a newer push cancels an older run, so an old build can never overwrite the download
+# runs of a branch wait for each other in order instead of cancelling each other:
+# no "cancelled" mails, and an older build can never overwrite a newer download
 concurrency:
   group: mac-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   mac:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Optional: Apple Developer ID signing + notarization (only runs when the secrets exist, see SIGNIEREN.md)
       - name: Import signing certificate
         env:
@@ -43,7 +44,7 @@ jobs:
         run: brew install create-dmg
       - name: Build app + DMG
         env:
-          VERSION: "2.4.0"
+          VERSION: "2.4.1"
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
@@ -192,7 +193,7 @@ jobs:
           git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-output
       - name: Development build (every push to main)
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: Entwicklungsversion (automatisch gebaut)
@@ -201,7 +202,7 @@ jobs:
           files: build/FrameBoost.dmg
       - name: Official release (tag v*, or started by hand with a version)
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.version != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           target_commitish: ${{ github.sha }}
@@ -209,7 +210,7 @@ jobs:
           body_path: RELEASE_NOTES.md
           make_latest: true
           files: build/FrameBoost.dmg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: FrameBoost-dmg
           path: build/FrameBoost.dmg

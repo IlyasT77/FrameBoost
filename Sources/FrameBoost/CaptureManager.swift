@@ -134,23 +134,32 @@ final class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         audioPreview = nil
     }
 
-    /// Prefer 1080p (then 1440p/4K/720p) with the highest frame rate the card offers.
+    /// How good a capture format is for FrameBoost (higher = better).
+    /// 1. The full 60 Hz signal: the PS5 sends every game frame inside a 60 Hz signal; capturing it at 30 Hz or less
+    ///    loses the timing (cheap USB 2.0 sticks offer e.g. 1080p only at 5 or 30 FPS, but 720p at 60).
+    /// 2. Resolution: 1080p is ideal, 4K costs a lot of GPU time for little gain.
+    /// 3. Uncompressed (YUV) before MJPEG/H.264 (less noise and latency).
+    static func formatScore(width: Int, height: Int, fps: Double, compressed: Bool) -> Double {
+        let rate: Double = fps >= 59 ? 3000 : fps >= 49 ? 2500 : fps * 40
+        let res: Double
+        switch (width, height) {
+        case (1920, 1080): res = 1000
+        case (2560, 1440): res = 900
+        case (1280, 720): res = 700
+        case (3840, 2160): res = 600
+        default: res = Double(min(width * height, 1920 * 1080)) / 4000
+        }
+        return rate + res + min(fps, 60) - (compressed ? 150 : 0)
+    }
+
+    /// Picks the card's best format by formatScore and sets its highest frame rate.
     private func configureBestFormat(_ dev: AVCaptureDevice) {
         func score(_ f: AVCaptureDevice.Format) -> Double {
             let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
             let fps = f.videoSupportedFrameRateRanges.map { $0.maxFrameRate }.max() ?? 0
-            let res: Double
-            switch (d.width, d.height) {
-            case (1920, 1080): res = 1000
-            case (2560, 1440): res = 900
-            case (1280, 720): res = 700
-            case (3840, 2160): res = 600   // 4K costs a lot of GPU time for little gain on the PS5's 30 FPS mode
-            default: res = Double(min(Int(d.width) * Int(d.height), 1920 * 1080)) / 4000
-            }
-            // compressed MJPEG modes (cheap HDMI sticks) add noise + latency -> prefer raw YUV
             let sub = CMFormatDescriptionGetMediaSubType(f.formatDescription)
             let compressed = sub == kCMVideoCodecType_JPEG_OpenDML || sub == kCMVideoCodecType_JPEG || sub == kCMVideoCodecType_H264
-            return res + min(fps, 120) * 3 - (compressed ? 150 : 0)
+            return CaptureManager.formatScore(width: Int(d.width), height: Int(d.height), fps: fps, compressed: compressed)
         }
         guard let best = dev.formats.max(by: { score($0) < score($1) }) else { return }
         do {

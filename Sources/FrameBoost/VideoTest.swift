@@ -155,15 +155,16 @@ enum Render60 {
     static func run(input: URL, output: URL, seconds: Double, hold: Bool = false, label: String? = nil) -> Bool {
         guard let device = MTLCreateSystemDefaultDevice(), let interp = try? Interpolator(device: device) else { print("GPU-Fehler"); return false }
         let asset = AVURLAsset(url: input)
-        guard let track = asset.tracks(withMediaType: .video).first, let reader = try? AVAssetReader(asset: asset) else { print("Video nicht lesbar"); return false }
-        let fps = Double(track.nominalFrameRate) > 0 ? Double(track.nominalFrameRate) : 30
+        guard let info = AssetInfo.load(asset), let reader = try? AVAssetReader(asset: asset) else { print("Video nicht lesbar"); return false }
+        let track = info.video
+        let fps = info.fps
         let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferMetalCompatibilityKey as String: true,
             kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any]])
         reader.add(out)
         guard reader.startReading() else { return false }
-        let w = Int(track.naturalSize.width), h = Int(track.naturalSize.height)
+        let w = Int(info.naturalSize.width), h = Int(info.naturalSize.height)
         try? FileManager.default.removeItem(at: output)
         guard let writer = try? AVAssetWriter(outputURL: output, fileType: .mp4) else { return false }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [

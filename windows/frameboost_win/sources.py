@@ -59,8 +59,11 @@ def list_video_devices() -> list[tuple[str, int, bool]]:
 
 class CaptureSource:
     """Reads a capture card on its own thread and pushes unique frames into the FrameStore."""
+    # best first: the full 60 Hz signal matters most (the PS5 sends every game frame inside a 60 Hz signal),
+    # then 1080p, then uncompressed. Cheap USB 2.0 sticks offer 1080p only at 5-30 FPS, but 720p at 60.
     MODES = [(1920, 1080, 60, "YUY2"), (1920, 1080, 60, "NV12"), (1920, 1080, 60, "MJPG"),
-             (1920, 1080, 30, "YUY2"), (1280, 720, 60, "YUY2"), (1280, 720, 60, "MJPG")]
+             (1280, 720, 60, "YUY2"), (1280, 720, 60, "NV12"), (1280, 720, 60, "MJPG"),
+             (1920, 1080, 30, "YUY2"), (1920, 1080, 30, "MJPG")]
 
     def __init__(self, index: int, store: FrameStore):
         self.index, self.store = index, store
@@ -70,22 +73,47 @@ class CaptureSource:
         self.format = ""
         self.error = ""
 
+    @staticmethod
+    def measured_rate(cap, seconds: float = 0.4, clock=time.perf_counter) -> float:
+        """Frames per second the card REALLY delivers in the current mode
+        (drivers often accept 60 Hz and silently deliver 5 or 30)."""
+        t0 = clock()
+        times = []
+        while clock() - t0 < seconds and len(times) < 40:
+            ok, _ = cap.read()
+            if not ok:
+                break
+            times.append(clock())
+        if len(times) < 3:
+            return 0.0
+        return (len(times) - 1) / max(times[-1] - times[0], 1e-6)
+
+    @classmethod
+    def negotiate(cls, cap, clock=time.perf_counter):
+        """Best mode the card really delivers -> (description, first frame) or (None, None)."""
+        for w, h, fps, fourcc in cls.MODES:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+            cap.set(cv2.CAP_PROP_FPS, fps)
+            ok, frame = cap.read()
+            if not (ok and frame is not None and frame.shape[1] == w and frame.shape[0] == h):
+                continue
+            rate = cls.measured_rate(cap, clock=clock)
+            if rate < fps * 0.75:      # asked for 60 Hz (or 30), got clearly less
+                continue
+            return f"{w}×{h} @ {round(rate)} Hz ({fourcc})", frame
+        return None, None
+
     def open(self) -> bool:
         cap = cv2.VideoCapture(self.index, backend())
         if not cap.isOpened():
             self.error = "Capture Card lässt sich nicht öffnen (OBS / Kamera-App schließen)."
             return False
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        for w, h, fps, fourcc in self.MODES:
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
-            cap.set(cv2.CAP_PROP_FPS, fps)
-            ok, frame = cap.read()
-            if ok and frame is not None and frame.shape[1] == w and frame.shape[0] == h:
-                rfps = cap.get(cv2.CAP_PROP_FPS) or fps
-                self.format = f"{w}×{h} @ {round(rfps)} Hz ({fourcc})"
-                break
+        desc, frame = self.negotiate(cap)
+        if desc is not None:
+            self.format = desc
         else:
             ok, frame = cap.read()
             if not ok:

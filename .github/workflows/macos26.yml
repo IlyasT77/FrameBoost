@@ -1,0 +1,89 @@
+name: Test macOS 26 (Apple Silicon)
+# Same app, tested on macOS 26 "Tahoe" - the system that new M5 Macs ship with.
+on:
+  push:
+    branches: [main]
+    paths: ['Sources/**', 'scripts/**', 'Package.swift', '.github/workflows/macos26.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mac26-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  mac26:
+    runs-on: macos-26
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+      - name: Tools
+        run: brew install create-dmg ffmpeg >/dev/null
+      - name: Build app + DMG
+        env:
+          VERSION: "2.4.1"
+        run: ./scripts/build_dmg.sh
+      - name: System
+        if: always()
+        run: |
+          mkdir -p ci-output
+          {
+            echo "macOS: $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
+            echo "Prozessor: $(sysctl -n machdep.cpu.brand_string) · $(uname -m)"
+            echo "App-Datei: $(lipo -info build/FrameBoost.app/Contents/MacOS/FrameBoost)"
+          } | tee ci-output/system.txt
+      - name: Self test
+        run: |
+          set -o pipefail
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --selftest ci-output 2>&1 | tee ci-output/selftest-log.txt
+      - name: 30 FPS test video
+        if: always()
+        run: |
+          if curl -L --fail --silent --max-time 600 -o bbb60.zip https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_60fps_normal.mp4.zip && unzip -o -q bbb60.zip; then
+            SRC=$(ls bbb_sunflower_1080p_60fps_normal*.mp4 | head -1)
+            ffmpeg -loglevel error -y -ss 62 -t 20 -i "$SRC" -r 60 -c:v libx264 -preset veryfast -crf 12 -pix_fmt yuv420p -c:a aac ref_60fps.mp4
+          else
+            ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1920x1080:rate=60 -t 20 -c:v libx264 -preset veryfast -crf 12 -pix_fmt yuv420p ref_60fps.mp4
+          fi
+          ffmpeg -loglevel error -y -i ref_60fps.mp4 -vf "select='not(mod(n\,2))',setpts=N/(30*TB)" -r 30 -c:v libx264 -preset veryfast -crf 12 -pix_fmt yuv420p -c:a copy testvideo_30fps.mp4
+      - name: Video test – 30 FPS video as capture card, lock to 60 FPS
+        if: always()
+        timeout-minutes: 6
+        continue-on-error: true
+        run: |
+          set +e
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --videotest "$PWD/testvideo_30fps.mp4" --soak-dir "$PWD/ci-output" --seconds 40 > ci-output/videotest-stdout.txt 2>&1 &
+          PID=$!
+          for i in $(seq 1 60); do
+            sleep 2
+            [ $i -eq 15 ] && screencapture -x ci-output/videotest.png
+            kill -0 $PID 2>/dev/null || break
+          done
+          if kill -0 $PID 2>/dev/null; then sample $PID 5 -file ci-output/videotest_haenger_stack.txt; kill -9 $PID; fi
+          wait $PID; CODE=$?
+          cat ci-output/videotest-report.txt
+          exit $CODE
+      - name: Soak test (5 min, every feature)
+        if: always()
+        timeout-minutes: 10
+        run: |
+          set +e
+          ./build/FrameBoost.app/Contents/MacOS/FrameBoost --soak 300 --soak-dir "$PWD/ci-output" > ci-output/soak-stdout.txt 2>&1 &
+          PID=$!
+          for i in $(seq 1 100); do
+            sleep 5
+            [ $i -eq 30 ] && screencapture -x ci-output/soak.png
+            kill -0 $PID 2>/dev/null || break
+          done
+          if kill -0 $PID 2>/dev/null; then sample $PID 5 -file ci-output/soak_haenger_stack.txt || true; kill -9 $PID; CODE=99; else wait $PID; CODE=$?; fi
+          cp ~/Library/Logs/FrameBoost/frameboost.log ci-output/ 2>/dev/null || true
+          cp ~/Library/Logs/DiagnosticReports/FrameBoost* ci-output/ 2>/dev/null || true
+          cat ci-output/soak-report.txt 2>/dev/null
+          exit $CODE
+      - name: Publish results to ci-output-macos26 branch
+        if: always()
+        run: |
+          mkdir -p ci-output
+          cd ci-output
+          git init -q && git checkout -q -b ci-output-macos26
+          git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm "CI output macOS 26 ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-output-macos26

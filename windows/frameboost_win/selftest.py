@@ -8,7 +8,27 @@ import cv2
 import numpy as np
 
 from .core import DelayLine, FrameStore, Interpolator
-from .sources import DemoSource
+from .sources import CaptureSource, DemoSource
+
+
+class FakeCard:
+    """Simulated capture card driver: accepts every requested mode but delivers what the chip really can."""
+
+    def __init__(self, modes, fallback=(640, 480, 30)):
+        self.modes, self.fallback, self.req, self.t = modes, fallback, {}, 0.0
+
+    def clock(self):
+        return self.t
+
+    def set(self, prop, value):
+        self.req[prop] = value
+
+    def read(self):
+        fcc = int(self.req.get(cv2.CAP_PROP_FOURCC, 0))
+        key = (int(self.req.get(cv2.CAP_PROP_FRAME_WIDTH, 0)), int(self.req.get(cv2.CAP_PROP_FRAME_HEIGHT, 0)), fcc)
+        w, h, rate = self.modes.get(key, self.fallback)
+        self.t += 1.0 / rate
+        return True, np.zeros((h, w, 3), np.uint8)
 
 
 def run(out_dir: str) -> bool:
@@ -111,6 +131,17 @@ def run(out_dir: str) -> bool:
     a_ok = abs(m60 - 60) < 10 and abs(m120 - 120) < 10 and spread < 30
     say(f"Ton-Puffer: Ziel 60 ms -> {m60:.1f} ms, Ziel 120 ms -> {m120:.1f} ms, Schwankung {spread:.1f} ms {'OK' if a_ok else 'FEHLER'}")
     ok = ok and a_ok
+
+    # capture format: a cheap USB 2.0 stick accepts "1080p 60 Hz" but delivers only 5 (raw) or 30 (MJPEG) frames/s
+    fcc = lambda c: cv2.VideoWriter_fourcc(*c)
+    usb2 = FakeCard({(1920, 1080, fcc("YUY2")): (1920, 1080, 5), (1920, 1080, fcc("MJPG")): (1920, 1080, 30),
+                     (1280, 720, fcc("YUY2")): (1280, 720, 10), (1280, 720, fcc("MJPG")): (1280, 720, 60)})
+    usb3 = FakeCard({(1920, 1080, fcc("YUY2")): (1920, 1080, 60), (1920, 1080, fcc("MJPG")): (1920, 1080, 60)})
+    d2, _ = CaptureSource.negotiate(usb2, clock=usb2.clock)
+    d3, _ = CaptureSource.negotiate(usb3, clock=usb3.clock)
+    f_ok = d2 == "1280×720 @ 60 Hz (MJPG)" and d3 == "1920×1080 @ 60 Hz (YUY2)"
+    say(f"Capture-Format: USB-2.0-Stick -> {d2}, USB-3.0-Karte -> {d3}: {'OK' if f_ok else 'FEHLER'}")
+    ok = ok and f_ok
 
     # speed at 1080p
     say("Geschwindigkeit 1920x1080 (dieser Rechner):")

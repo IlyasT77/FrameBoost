@@ -10,6 +10,7 @@ final class VideoFileSource {
     private let queue = DispatchQueue(label: "video.file.source", qos: .userInteractive)
     private var timer: DispatchSourceTimer?
     private var asset: AVURLAsset?
+    private var info: AssetInfo?
     private var reader: AVAssetReader?
     private var videoOut: AVAssetReaderTrackOutput?
     private var audioOut: AVAssetReaderTrackOutput?
@@ -41,12 +42,11 @@ final class VideoFileSource {
     /// Opens the file (synchronously, so errors can be shown right away).
     func open() -> Bool {
         let a = AVURLAsset(url: url)
-        guard let t = a.tracks(withMediaType: .video).first else { error = "Die Datei enthält kein Video."; return false }
-        nominalFPS = Double(t.nominalFrameRate) > 0 ? Double(t.nominalFrameRate) : 30
-        let r = CGRect(origin: .zero, size: t.naturalSize).applying(t.preferredTransform)
-        size = CGSize(width: abs(r.width), height: abs(r.height))
-        duration = a.duration.seconds
-        asset = a
+        guard let i = AssetInfo.load(a) else { error = "Die Datei enthält kein Video."; return false }
+        nominalFPS = i.fps
+        size = i.displaySize
+        duration = i.duration
+        asset = a; info = i
         guard makeReader() else { return false }
         if preloadSeconds > 0 {
             while Double(preloaded.count) < preloadSeconds * nominalFPS, let f = readNext() {
@@ -70,7 +70,7 @@ final class VideoFileSource {
     }
 
     private func makeReader() -> Bool {
-        guard let a = asset, let v = a.tracks(withMediaType: .video).first else { return false }
+        guard let a = asset, let v = info?.video else { return false }
         do {
             let r = try AVAssetReader(asset: a)
             let vo = AVAssetReaderTrackOutput(track: v, outputSettings: [
@@ -80,7 +80,7 @@ final class VideoFileSource {
             vo.alwaysCopiesSampleData = false
             r.add(vo)
             var ao: AVAssetReaderTrackOutput?
-            if let at = a.tracks(withMediaType: .audio).first {
+            if let at = info?.audio {
                 let o = AVAssetReaderTrackOutput(track: at, outputSettings: [
                     AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
                     AVLinearPCMIsNonInterleaved: false, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2])

@@ -269,6 +269,16 @@ enum SelfTest {
         }
 
         // --- Speed ---
+        do {   // Fehler 25: capture format choice (a cheap USB 2.0 stick offers raw 1080p only at 5 FPS)
+            typealias F = (w: Int, h: Int, fps: Double, mjpeg: Bool)
+            func score(_ f: F) -> Double { CaptureManager.formatScore(width: f.w, height: f.h, fps: f.fps, compressed: f.mjpeg) }
+            func best(_ list: [F]) -> F { list.max { score($0) < score($1) }! }
+            let usb2 = best([(1920, 1080, 5, false), (1920, 1080, 30, true), (1280, 720, 60, true), (640, 480, 60, false)])
+            let usb3 = best([(1920, 1080, 60, false), (1920, 1080, 60, true), (3840, 2160, 30, true), (1280, 720, 60, false)])
+            let good = usb2.w == 1280 && usb2.fps == 60 && usb3.w == 1920 && usb3.fps == 60 && !usb3.mjpeg
+            say("  [Fehler 25] Capture-Format: USB-2.0-Stick -> \(usb2.w)x\(usb2.h) @ \(Int(usb2.fps)) Hz, USB-3.0-Karte -> \(usb3.w)x\(usb3.h) @ \(Int(usb3.fps)) Hz \(usb3.mjpeg ? "MJPEG" : "unkomprimiert"): \(good ? "OK" : "FEHLER")")
+            if !good { ok = false }
+        }
         say("Geschwindigkeit:")
         for (w, h) in [(1920, 1080), (2560, 1440), (3840, 2160)] {
             for q in GenQuality.allCases {

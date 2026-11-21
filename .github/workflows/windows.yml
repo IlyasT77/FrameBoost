@@ -12,10 +12,11 @@ on:
         default: ''
 permissions:
   contents: write
-# a newer push cancels an older run, so an old build can never overwrite the download
+# runs of a branch wait for each other in order instead of cancelling each other:
+# no "cancelled" mails, and an older build can never overwrite a newer download
 concurrency:
   group: windows-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   windows:
     runs-on: windows-latest
@@ -24,8 +25,8 @@ jobs:
         shell: pwsh
         working-directory: windows
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install dependencies
@@ -86,7 +87,7 @@ jobs:
           git push -f "https://x-access-token:${{ github.token }}@github.com/$env:GITHUB_REPOSITORY.git" ci-output-win
       - name: Development build (every push to main)
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
           name: Entwicklungsversion (automatisch gebaut)
@@ -95,7 +96,7 @@ jobs:
           files: windows/dist/FrameBoost.exe
       - name: Official release (tag v*, or started by hand with a version)
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.version != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           target_commitish: ${{ github.sha }}
@@ -103,7 +104,7 @@ jobs:
           body_path: RELEASE_NOTES.md
           make_latest: true
           files: windows/dist/FrameBoost.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: FrameBoost-exe
           path: windows/dist/FrameBoost.exe

@@ -1,7 +1,24 @@
-# Testbericht FrameBoost 2.4
+# Testbericht FrameBoost 2.4.1
+
+## Kurzfassung
+
+| | Ergebnis |
+|---|---|
+| **60-FPS-Lock** (30-FPS-Video als Capture Card, Modus 2×) | ✅ macOS 26: **99,9 %** neue Bilder pro Refresh, 99,8 % zeitlich exakt · macOS 15: 99,7 % / 98,6 % |
+| **macOS 26** (System der M5-Macs) auf Apple Silicon | ✅ Build, Selbsttest, Videotest, 5-min-Dauertest – alles bestanden |
+| **Apple Silicon M1–M5** | ✅ läuft nativ (arm64), geprüft auf M1-Testservern mit macOS 15 und 26 |
+| **Abstürze** | ✅ keine – 10 min (macOS 15), 5 min (macOS 26), 5 min (Windows), alle Funktionen in Schleife |
+| **Speicher** | ✅ konstant (60 → 60 MB nach 10 min) |
+| **Takt-Simulation** 60/120/144/180 Hz, alle Modi | ✅ schlechtester Fall 99,3 % (Details unten) |
+| **Günstige Capture Cards** (USB 2.0/3.0) | ✅ es wird immer ein Format mit vollem 60-Hz-Takt gewählt (Test mit typischen Formatlisten) |
+| **GitHub-Testläufe** | ✅ alle grün, 0 Warnungen, keine abgebrochenen Läufe mehr |
+| Windows-Videotest | ⚠️ nicht gelockt – der Windows-Testserver hat keine Grafikkarte (siehe Grenzen) |
+| Echte PS5 + Capture Card | ⏳ noch nicht getestet (keine Hardware im Testserver) |
+
+## Wie getestet wird
 
 Alle Tests laufen bei jedem Build automatisch auf den GitHub-Servern:
-**macOS 15 auf Apple M1** (virtuelle Maschine, virtuelle GPU) und **Windows Server 2022** (4 CPU-Kerne, **keine Grafikkarte**).
+**macOS 15 und macOS 26 auf Apple M1** (virtuelle Maschinen, virtuelle GPU) und **Windows Server 2022** (4 CPU-Kerne, **keine Grafikkarte**).
 Mit echter Capture Card und PS5 konnte nicht getestet werden. Stattdessen läuft ein echtes Video als „virtuelle Capture Card“:
 genau wie bei der PS5 kommt ein 60-Hz-Signal an, in dem jedes Bild eines 30-FPS-Videos doppelt enthalten ist.
 
@@ -12,8 +29,8 @@ genau wie bei der PS5 kommt ein 60-Hz-Signal an, in dem jedes Bild eines 30-FPS-
 | Prüfung | Ergebnis |
 |---|---|
 | App-Datei | Universal Binary: `x86_64 arm64` (`lipo -info`) |
-| Test-Mac | Apple M1, `arm64` – die App läuft **nativ**, ohne Rosetta |
-| M2, M3, M4, M5 | gleiche Architektur (arm64) und Metal-GPU wie M1 → unterstützt |
+| Test-Macs | Apple M1, `arm64`, **macOS 15** und **macOS 26.7** – die App läuft **nativ**, ohne Rosetta |
+| M2, M3, M4, M5 | gleiche Architektur (arm64) und Metal-GPU wie M1 → unterstützt; M5-Macs laufen mit macOS 26, das jetzt mitgetestet wird |
 | Intel-Macs | ebenfalls in der Datei enthalten |
 
 ## 2. Echtes Video als Capture Card (Big Buck Bunny, 1080p)
@@ -33,6 +50,15 @@ FrameBoost erreicht den besten PSNR aller Verfahren. Beim SSIM (Strukturähnlich
 FFmpeg-Methode knapp vorne. Das Vergleichsvideo `vergleich_30_vs_60fps.mp4` zeigt beides nebeneinander.
 
 ### 60-FPS-Lock im laufenden Programm (Mac, Modus 2×, 60-Hz-Bildschirm) – ✅ GELOCKT
+
+**Version 2.4.1** (21.11.):
+
+| Testserver | neues Bild pro Refresh | zeitlich exakt | gezählte Ausgabe |
+|---|---|---|---|
+| macOS 26.7, Apple M1 | **99,9 %** | **99,8 %** | 57,7 FPS |
+| macOS 15, Apple M1 | **99,7 %** | **98,6 %** | 58,0 FPS |
+
+**Version 2.4.0** (19.11.):
 
 Das 30-FPS-Video läuft als virtuelle Capture Card durch die echte App, 40 Sekunden gemessen, jeder Bildschirm-Refresh einzeln protokolliert.
 
@@ -61,8 +87,24 @@ Die Änderungen wurden zusätzlich mit den echten Messzeiten der Testläufe in e
 | Ton-Puffer: Ziel 60 / 120 ms | ✅ 57,4 / 117,8 ms | ✅ 57,4 / 117,9 ms |
 | Duplikate / Szenenwechsel / ruhige Szene (1-Pixel-Bewegung) | ✅ / ✅ / ✅ | ✅ / ✅ / ✅ |
 | Regressionstests (Start/Stop-Stress, Threads, Auflösungswechsel, Puffer-Grenzfälle) | ✅ alle | – |
-| **Dauertest** (alle Funktionen in Schleife) | ✅ **10 min, 240 Aktionen, 0 Abstürze**, Speicher konstant (64 → 60 MB, max. 67 MB) | ✅ **5 min, 120 Aktionen, 0 Abstürze** |
+| Capture-Format: USB-2.0-Stick → 720p60, USB-3.0-Karte → 1080p60 unkomprimiert | ✅ | ✅ (misst die echte Bildrate der Karte) |
+| **Dauertest** (alle Funktionen in Schleife) | ✅ **macOS 15: 10 min, 240 Aktionen, 0 Abstürze**, Speicher 60 → 60 MB · **macOS 26: 5 min, 120 Aktionen, 0 Abstürze**, 70 → 68 MB | ✅ **5 min, 120 Aktionen, 0 Abstürze** |
 | Geschwindigkeit 1080p | ✅ Analyse 13 ms, Zwischenbild 2 ms → bis 180 FPS | Server ohne Grafikkarte: Analyse 15–30 ms, Zwischenbild 15–35 ms |
+
+### Takt-Simulation (neu in 2.4.1, läuft bei jedem Build: `tools/pacing_sim.py`)
+
+Spielt die Taktlogik der App mit einem künstlichen Capture-Card-Signal nach – für Bildschirme, die es im Testserver nicht gibt
+(z. B. dein 180-Hz-Monitor). Werte: neues Bild pro Refresh / zeitlich exakt / Verzögerung Bildmoment → Refresh.
+
+| Bildschirm, Modus | normal | unruhige Capture Card (4 ms Jitter) | Spiel ruckelt (5 % der Bilder zu spät) |
+|---|---|---|---|
+| 60 Hz, 2× (30 → 60) | 99,96 / 99,92 % · 48 ms | 99,93 / 99,86 % | 99,96 / 99,50 % |
+| 120 Hz, 4× (30 → 120) | 99,97 / 99,97 % · 48 ms | 99,92 / 99,83 % | 99,93 / 99,71 % |
+| **180 Hz, 6× (30 → 180)** | **99,97 / 99,96 % · 48 ms** | 99,71 / 99,27 % | 99,80 / 99,40 % |
+| 144 Hz, Auto | 99,98 / 99,97 % · 45 ms | 99,98 / 99,97 % | 99,97 / 99,28 % |
+| 180 Hz, Auto | 99,99 / 99,97 % · 45 ms | 99,97 / 99,96 % | 99,96 / 99,09 % |
+
+Die Simulation wurde gegen die echten Messzeiten der Testserver geprüft (alter Stand simuliert 97,9 %, gemessen 97,3 %).
 
 ## 4. Gefundene und behobene Fehler
 
@@ -92,6 +134,12 @@ Die Änderungen wurden zusätzlich mit den echten Messzeiten der Testläufe in e
 | #22 | Mac | Takt | macOS rief das Zeichnen manchmal zweimal im selben Refresh auf → die Ausgabeuhr lief vor, Bilder fehlten | Refresh-Raster, das der Phase der Aufrufe folgt (doppelter Aufruf = kein neuer Refresh) |
 | #23 | Mac | Takt | Zwischenstand (nie veröffentlicht): nach einem ausgelassenen Bild wurde dauerhaft jedes zweite echte Bild übersprungen | Ausgaberaster in fester Zeit (1 Bildabstand ÷ Modus), nicht relativ zum Bildpaar |
 | #24 | Build | Test | Ein nicht gelockter Videotest ließ den ganzen Build scheitern (Fehler-Mails, kein neuer Download) | Ergebnis steht im Bericht, der Download wird trotzdem gebaut |
+| #25 | Mac | **Capture Card** | Günstige USB-2.0-Sticks bieten 1080p unkomprimiert nur mit 5 Bildern/s – FrameBoost hätte genau das gewählt | Voller 60-Hz-Takt hat Vorrang (dann 720p60) · Selbsttest mit typischen Formatlisten ✅ |
+| #26 | Windows | **Capture Card** | Treiber akzeptieren „1080p 60 Hz“ und liefern trotzdem weniger | Die tatsächliche Bildrate wird gemessen, 720p60 vor 1080p30 · Selbsttest mit simulierten Karten ✅ |
+| #27 | Windows | Anzeige | Versionsnummer zeigte 2.3.0 | 2.4.1 |
+| #28 | beide | Takt | Ein Spiel-Ruckler (Bild eine Signalperiode zu spät) wurde als Übertragungs-Schwankung geglättet | Wird als echter Ruckler erkannt (Simulation: 97–99,7 % statt 94–97 % exakt) |
+| #29 | Mac | Verzögerung | Feste Modi (2×, 4×, 6×) rundeten immer ab → bis zu einem Zwischenbild mehr Verzögerung | Rundung beginnt am nächsten Rasterpunkt: 2× bei 60 Hz ≈ 17 ms weniger Verzögerung, gleiche Qualität |
+| #30 | Build | **Fehler-Mails** | Neue Testläufe brachen ältere ab („cancelled“-Mails); veraltete Node-20-Aktionen und veraltete Video-Funktionen erzeugten Warnungen | Läufe warten aufeinander; aktuelle Aktionen; neue AVFoundation-Funktionen · Logs: 0 Warnungen, 0 Fehler |
 
 ## 5. Bekannte Grenzen
 
@@ -102,4 +150,5 @@ Die Änderungen wurden zusätzlich mit den echten Messzeiten der Testläufe in e
   Bei Bedarf in den Einstellungen „Schnell“ wählen.
 - Mac-Testserver: virtuelle GPU, deutlich langsamer als ein echter M-Chip; Anzeigezeitpunkte meldet sie nicht, gemessen wird daher am Zeichenzeitpunkt.
 - Nicht signiert: Gatekeeper-/SmartScreen-Hinweis beim ersten Start. HDR wird nicht unterstützt.
-- Verzögerung: etwa ein echtes Bild + ein Bildschirm-Refresh (≈ 50 ms bei 30 FPS / 60 Hz). Der Ton wird automatisch angeglichen.
+- Verzögerung: etwa ein echtes Bild + ein Bildschirm-Refresh (≈ 45–50 ms vom Bildmoment bis zum Refresh, dazu die Anzeige selbst). Der Ton wird automatisch angeglichen.
+- Die Fehler-Mails von GitHub vom 19.11. stammen von alten, abgebrochenen bzw. fehlgeschlagenen Testläufen (vor Fehler #24/#30). Seit 2.4.1 sind alle Läufe grün.

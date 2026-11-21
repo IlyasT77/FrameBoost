@@ -2,7 +2,7 @@ name: Build macOS DMG
 on:
   push:
     branches: [main]
-    paths: ['Sources/**', 'scripts/**', 'Package.swift', '.github/workflows/build.yml']
+    paths: ['Sources/**', 'scripts/**', 'tools/**', 'Package.swift', '.github/workflows/build.yml']
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -54,6 +54,11 @@ jobs:
           set -o pipefail
           mkdir -p ci-output
           ./build/FrameBoost.app/Contents/MacOS/FrameBoost --selftest ci-output 2>&1 | tee ci-output/selftest-log.txt
+      - name: Frame pacing simulation (60/120/144/180 Hz, all modes)
+        if: always()
+        run: |
+          mkdir -p ci-output
+          python3 tools/pacing_sim.py | tee ci-output/takt-simulation.txt
       - name: Apple Silicon check (universal binary)
         if: always()
         run: |

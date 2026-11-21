@@ -68,7 +68,8 @@ class FrameStore:
                 self.interval = self.interval * 0.9 + dt * 0.1
             self.last_unique = t
             pred = self.smoothed + self.interval
-            if self.smoothed == 0 or abs(t - pred) > self.interval * 0.6:
+            # a whole signal period early/late = real game stutter, not jitter (see FrameStore.swift)
+            if self.smoothed == 0 or abs(t - pred) > self.interval * 0.4:
                 self.smoothed = t
             else:
                 self.smoothed = pred + (t - pred) * 0.15

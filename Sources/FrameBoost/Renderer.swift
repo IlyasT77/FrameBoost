@@ -99,7 +99,7 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     func reset() {
         lastSeq = 0; timeB = 0; timeA = 0; outClock = 0; lastShown = (0, -1); pendingPair = nil
-        nextNeedsNewPair = true; gridOffset = 0.5; gridVec = (0, 0); slotAnchor = 0; slot = 0
+        nextNeedsNewPair = true; gridOffset = 0.5; gridVec = (0, 0); gridValid = false; slotAnchor = 0; slot = 0
         statLock.lock(); presentTimes.removeAll(); statLock.unlock()
         interp.reset()
     }
@@ -125,6 +125,7 @@ final class Renderer: NSObject, MTKViewDelegate {
     /// mean. Rounding is centred on it, so refresh timing jitter can never flip between two neighbouring images.
     private var gridOffset: Double = 0.5
     private var gridVec: (x: Double, y: Double) = (0, 0)
+    private var gridValid = false
     /// refresh slots: a grid of refresh periods that follows the phase of the draw calls. The number of refreshes
     /// between two calls is the slot difference (0 = a second call within the same refresh, 2 = one was skipped),
     /// robust against irregular call times (e.g. a call 7 ms after the previous one followed by one after 26 ms).
@@ -242,13 +243,14 @@ final class Renderer: NSObject, MTKViewDelegate {
                 let x = (outClock - timeA) / g, f = x - x.rounded(.down)
                 gridVec = (gridVec.x * 0.97 + cos(2 * .pi * f) * 0.03, gridVec.y * 0.97 + sin(2 * .pi * f) * 0.03)
                 if hypot(gridVec.x, gridVec.y) > 0.5 {
-                    // continuous (unwrapped) so it never jumps by a whole image; kept within [-0.25, 1.25)
+                    // starts at the nearest grid point (lowest delay: 2x at 60 Hz ~17 ms less than rounding down),
+                    // then continuous (unwrapped) so it never jumps by a whole image; kept within [-0.5, 1)
                     let o = atan2(gridVec.y, gridVec.x) / (2 * .pi)
-                    var c = o + (gridOffset - o).rounded()
-                    if c >= 1.25 { c -= 1 } else if c < -0.25 { c += 1 }
-                    gridOffset = c
+                    var c = gridValid ? o + (gridOffset - o).rounded() : o
+                    if c >= 1 { c -= 1 } else if c < -0.5 { c += 1 }
+                    gridOffset = c; gridValid = true
                 } else {
-                    gridOffset = 0.5   // refresh rate is no multiple of the frame rate: plain rounding down
+                    gridOffset = 0.5; gridValid = false   // refresh rate is no multiple of the frame rate: round down
                 }
             }
             var p = position(outClock, mode)

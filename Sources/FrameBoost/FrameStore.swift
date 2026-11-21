@@ -74,9 +74,11 @@ final class FrameStore {
         if lastUniqueTime > 0, dt > 0.004, dt < 0.1 { interval = interval * 0.9 + dt * 0.1 }
         lastUniqueTime = time
 
-        // jitter smoothing (USB / driver delivery jitter): phase-locked timestamp
+        // jitter smoothing (USB / driver delivery jitter): phase-locked timestamp. A frame that is a whole
+        // signal period (16.7 ms) early or late is a real stutter of the game, not jitter: take its time as is
+        // (0.4 × 33 ms = 13 ms; simulated with 5-10 % game stutter: 97-99.7 % instead of 94-97 % exact timing)
         let predicted = smoothedTime + interval
-        if smoothedTime == 0 || abs(time - predicted) > interval * 0.6 {
+        if smoothedTime == 0 || abs(time - predicted) > interval * 0.4 {
             smoothedTime = time
         } else {
             smoothedTime = predicted + (time - predicted) * 0.15

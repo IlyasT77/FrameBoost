@@ -1,16 +1,17 @@
-# Testbericht FrameBoost 2.4.1
+# Testbericht FrameBoost 2.4.2
 
 ## Kurzfassung
 
 | | Ergebnis |
 |---|---|
-| **60-FPS-Lock** (30-FPS-Video als Capture Card, Modus 2×) | ✅ macOS 26: **99,9 %** neue Bilder pro Refresh, 99,8 % zeitlich exakt · macOS 15: 99,7 % / 98,6 % |
+| **60-FPS-Lock** (30-FPS-Video als Capture Card, Modus 2×) | ✅ **60 FPS GELOCKT** – macOS 15: **100,0 %** neue Bilder pro Refresh, 99,8 % zeitlich exakt · macOS 26: 99,9 % / 99,7 % |
 | **macOS 26** (System der M5-Macs) auf Apple Silicon | ✅ Build, Selbsttest, Videotest, 5-min-Dauertest – alles bestanden |
 | **Apple Silicon M1–M5** | ✅ läuft nativ (arm64), geprüft auf M1-Testservern mit macOS 15 und 26 |
 | **Abstürze** | ✅ keine – 10 min (macOS 15), 5 min (macOS 26), 5 min (Windows), alle Funktionen in Schleife |
 | **Speicher** | ✅ konstant (60 → 60 MB nach 10 min) |
 | **Takt-Simulation** 60/120/144/180 Hz, alle Modi | ✅ schlechtester Fall 99,3 % (Details unten) |
 | **Günstige Capture Cards** (USB 2.0/3.0) | ✅ es wird immer ein Format mit vollem 60-Hz-Takt gewählt (Test mit typischen Formatlisten) |
+| **1440p** | ✅ 1440p60-Karte am MacBook-Display → 1440p60 · am 1080p-Monitor → 1080p60 · Karte mit nur 2K 30 Hz → 1080p60 |
 | **GitHub-Testläufe** | ✅ alle grün, 0 Warnungen, keine abgebrochenen Läufe mehr |
 | Windows-Videotest | ⚠️ nicht gelockt – der Windows-Testserver hat keine Grafikkarte (siehe Grenzen) |
 | Echte PS5 + Capture Card | ⏳ noch nicht getestet (keine Hardware im Testserver) |
@@ -50,6 +51,13 @@ FrameBoost erreicht den besten PSNR aller Verfahren. Beim SSIM (Strukturähnlich
 FFmpeg-Methode knapp vorne. Das Vergleichsvideo `vergleich_30_vs_60fps.mp4` zeigt beides nebeneinander.
 
 ### 60-FPS-Lock im laufenden Programm (Mac, Modus 2×, 60-Hz-Bildschirm) – ✅ GELOCKT
+
+**Version 2.4.2** (21.11., Endstand):
+
+| Testserver | neues Bild pro Refresh | zeitlich exakt | Ergebnis |
+|---|---|---|---|
+| macOS 15, Apple M1 | **100,0 %** | **99,8 %** | 60 FPS GELOCKT ✔ |
+| macOS 26.7, Apple M1 | **99,9 %** | **99,7 %** | 60 FPS GELOCKT ✔ |
 
 **Version 2.4.1** (21.11.):
 
@@ -139,6 +147,7 @@ Die Simulation wurde gegen die echten Messzeiten der Testserver geprüft (alter 
 | #27 | Windows | Anzeige | Versionsnummer zeigte 2.3.0 | 2.4.1 |
 | #28 | beide | Takt | Ein Spiel-Ruckler (Bild eine Signalperiode zu spät) wurde als Übertragungs-Schwankung geglättet | Wird als echter Ruckler erkannt (Simulation: 97–99,7 % statt 94–97 % exakt) |
 | #29 | Mac | Verzögerung | Feste Modi (2×, 4×, 6×) rundeten immer ab → bis zu einem Zwischenbild mehr Verzögerung | Rundung beginnt am nächsten Rasterpunkt: 2× bei 60 Hz ≈ 17 ms weniger Verzögerung, gleiche Qualität |
+| #31 | Mac | Auflösung | Eine Karte mit echtem 1440p60 wäre trotzdem mit 1080p betrieben worden | Auf hochauflösenden Bildschirmen (MacBook-Retina) wird 1440p60 genutzt, auf 1080p-Monitoren 1080p; 1440p mit 30 Hz nie · Selbsttest ✅ |
 | #30 | Build | **Fehler-Mails** | Neue Testläufe brachen ältere ab („cancelled“-Mails); veraltete Node-20-Aktionen und veraltete Video-Funktionen erzeugten Warnungen | Läufe warten aufeinander; aktuelle Aktionen; neue AVFoundation-Funktionen · Logs: 0 Warnungen, 0 Fehler |
 
 ## 5. Bekannte Grenzen

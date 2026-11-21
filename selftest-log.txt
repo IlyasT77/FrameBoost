@@ -1,0 +1,30 @@
+GPU: Apple Paravirtual device
+Shader kompiliert: OK
+Qualität (PSNR in dB, höher = besser) gegen das echte Zwischenbild:
+  [normal | Hoch (bis 1080p, darüber automatisch Schnell)]  Frame wiederholen 18.7 · Überblenden 19.7 · FrameBoost 34.7
+  [normal | Schnell]  Frame wiederholen 18.7 · Überblenden 19.7 · FrameBoost 33.0
+  [schnelle Bewegung | Hoch (bis 1080p, darüber automatisch Schnell)]  Frame wiederholen 16.5 · Überblenden 17.7 · FrameBoost 26.8
+  [schnelle Bewegung | Schnell]  Frame wiederholen 16.5 · Überblenden 17.7 · FrameBoost 28.2
+Szenenwechsel-Erkennung: OK
+Doppelte Frames entfernen: OK
+Ruhige Szene (kleines Objekt bewegt sich 1 Pixel) wird als neues Bild erkannt: OK
+Ton-Puffer (Bild/Ton synchron): Ziel 60 ms -> 57.4 ms, Ziel 120 ms -> 117.8 ms, Schwankung 13.7 ms OK
+  Audio-Ausgabe: OK · engine=aus rate=48000 buffered=0.0ms target=80.0ms outLatency=0.0ms skips=0 holds=0
+Regressionstests:
+  Architektur: arm64 – läuft nativ auf Apple Silicon (M1–M5)
+  GPU: Apple Paravirtual device · Apple-GPU-Familie 7+: nein · Metal 3: nein
+  [Fehler 2/3] Ton: 60× Start/Stop während Ton läuft, danach kein Ton: OK
+  [Fehler 5] Demo-Signal: 40× Start/Stop im laufenden Betrieb: OK
+  Bildspeicher: 800 gleichzeitige Zugriffe von 8 Threads: OK
+  Auflösungswechsel 720p → 1080p → 720p im laufenden Betrieb: OK
+  Ton-Puffer Grenzfälle (Überlauf, 0 ms, zu große Verzögerung): OK
+  [Fehler 25] Capture-Format: USB-2.0-Stick -> 1280x720 @ 60 Hz, USB-3.0-Karte -> 1920x1080 @ 60 Hz unkomprimiert: OK
+  1440p: Retina-Bildschirm -> 1440p60, 1080p-Monitor -> 1080p60, Karte mit nur 2K 30 Hz -> 1080p60: OK
+Geschwindigkeit:
+  1920x1080 Hoch: Analyse 13.48 ms/Frame, Zwischenbild 2.14 ms + Anzeige 0.00 ms -> 60 FPS JA, 120 FPS JA, 180 FPS JA
+  1920x1080 Schnell: Analyse 7.35 ms/Frame, Zwischenbild 2.16 ms + Anzeige 0.00 ms -> 60 FPS JA, 120 FPS JA, 180 FPS JA
+  2560x1440 Hoch→Schnell: Analyse 10.34 ms/Frame, Zwischenbild 3.22 ms + Anzeige 1.07 ms -> 60 FPS JA, 120 FPS JA, 180 FPS NEIN
+  2560x1440 Schnell: Analyse 10.42 ms/Frame, Zwischenbild 3.30 ms + Anzeige 1.24 ms -> 60 FPS JA, 120 FPS JA, 180 FPS NEIN
+  3840x2160 Hoch→Schnell: Analyse 18.92 ms/Frame, Zwischenbild 6.60 ms + Anzeige 1.61 ms -> 60 FPS NEIN, 120 FPS NEIN, 180 FPS NEIN
+  3840x2160 Schnell: Analyse 18.90 ms/Frame, Zwischenbild 6.60 ms + Anzeige 1.65 ms -> 60 FPS NEIN, 120 FPS NEIN, 180 FPS NEIN
+ERGEBNIS: BESTANDEN

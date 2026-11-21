@@ -1,0 +1,3 @@
+macOS: 26.7.2 (25G332)
+Prozessor: Apple M1 (Virtual) · arm64
+App-Datei: Architectures in the fat file: build/FrameBoost.app/Contents/MacOS/FrameBoost are: x86_64 arm64 

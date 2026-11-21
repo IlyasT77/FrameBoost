@@ -1,0 +1,19 @@
+IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver
+FrameBoost Videotest – 30-FPS-Video als Capture Card, Ziel: 60 FPS gelockt
+=========================================================================
+Video: testvideo_30fps.mp4 · Video 1920×1080 · 30 FPS → 60 Hz-Signal (testvideo_30fps.mp4)
+Eingang: Signal 60.0 Hz, davon echte Bilder 30.0 FPS (Duplikate entfernt: 50 %)
+Bildschirm: 60 Hz · Modus 2× · GPU 2.8 ms pro Bild
+Messung: 40 s, 2373 neue Bilder auf dem Bildschirm (Zeichenzeitpunkte)
+Ausgabe: 59.30 FPS
+Bildabstand: Mittel 16.86 ms (Ziel 16.67 ms), Streuung 3.00 ms, 1%: 13.78 ms, 99%: 20.26 ms
+Pünktlich (±2 ms): 75.4 % · Hänger (> 1,5 Bildabstände): 19
+Bildinhalt: rückt pro Bild 16.86 ms im Video vor (Streuung 2.86 ms), gleichmäßig (±1,5 ms): 98.9 %, doppelte Bilder: 0
+Ton-Puffer: 86 ms
+--- getrennt nach Ursache ---
+Testrechner: 2374 Refreshes, davon 18 mit ausgelassenem Aufruf; 3 doppelte Aufrufe im selben Refresh (Abstand der Aufrufe 1%: 13.8 ms, 99%: 20.0 ms)
+Virtuelle Capture Card: bei 2 Refreshes war das nötige echte Bild noch nicht da (oder wurde übersprungen)
+FrameBoost, alle Refreshes: bei 99.9 % ein neues Bild, bei 99.7 % genau passend zur vergangenen Zeit
+FrameBoost, Refreshes mit rechtzeitigem Eingangsbild (2372): bei 99.9 % ein neues Bild, bei 99.8 % genau passend
+ERGEBNIS: 60 FPS GELOCKT ✔
+
